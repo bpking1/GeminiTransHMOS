@@ -251,6 +251,14 @@ export class TranslationSession {
     this.publishTranscripts();
   }
 
+  getInputTranscript(): string {
+    return this.inputBuffer.value();
+  }
+
+  getOutputTranscript(): string {
+    return this.outputBuffer.value();
+  }
+
   isActive(): boolean {
     return this.running || this.starting || this.cleaningUp || this.cleanupTask !== undefined;
   }

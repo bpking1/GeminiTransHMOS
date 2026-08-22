@@ -85,6 +85,7 @@ struct Index {
       this.showOriginal = this.settings.showOriginal;
       this.captionFontSize = this.settings.captionFontSize;
       this.settingsLoaded = true;
+      PiPManager.getInstance().updateSettings(this.settings);
       Log.info(`Settings loaded: targetLang=${this.targetLanguage}, source=${this.audioSource}, hasApiKey=${this.settings.apiKey.length > 0}`);
     } catch (error) {
       Log.error(`Failed to load settings: ${JSON.stringify(error)}`);
@@ -268,6 +269,7 @@ struct Index {
     }
     this.audioSource = source;
     this.settings.audioSource = source;
+    PiPManager.getInstance().updateSettings(this.settings);
     try {
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await SettingsStore.save(context, this.settings);

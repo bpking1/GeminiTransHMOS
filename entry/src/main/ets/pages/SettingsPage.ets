@@ -5,6 +5,7 @@ import {
   LanguageItem,
   languageName
 } from '../model/AppSettings';
+import { PiPManager } from '../service/PiPManager';
 import { SettingsStore } from '../service/SettingsStore';
 import { Log } from '../util/Logger';
 
@@ -65,6 +66,7 @@ struct SettingsPage {
       Log.info(`Saving settings: apiBase=${settings.apiBase}, targetLang=${settings.targetLanguage}, source=${settings.audioSource}`);
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await SettingsStore.save(context, settings);
+      PiPManager.getInstance().updateSettings(settings);
       this.saving = false;
       try {
         this.getUIContext().getRouter().back();
