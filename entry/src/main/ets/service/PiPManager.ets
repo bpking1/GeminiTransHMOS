@@ -35,11 +35,9 @@ function buildPiPSubtitleView(data: SubtitleData) {
         .fontSize(data.fontSize)
         .fontWeight(FontWeight.Bold)
         .fontColor('#FFFFFF')
-        .lineHeight(data.fontSize * 1.38)
+        .lineHeight(data.fontSize * 1.36)
         .textAlign(TextAlign.Start)
         .textShadow({ radius: 6, color: '#FF000000', offsetY: 1 })
-        .maxLines(data.maxLines)
-        .textOverflow({ overflow: TextOverflow.None })
         .wordBreak(WordBreak.BREAK_ALL)
     } else {
       Text(data.isLive ? '正在聆听并实时翻译…' : 'Gemini 实时字幕已就绪')
@@ -159,8 +157,8 @@ export class PiPManager {
 
   private getCharsPerLine(): number {
     const fontSize: number = this.currentSettings.captionFontSize || 18;
-    // Usable text width is 880 - 32 = 848vp. Each CJK char is approx 1 fontSize.
-    return Math.max(16, Math.floor(848 / fontSize));
+    // Real phone PiP text container width is approx 330vp.
+    return Math.max(12, Math.min(26, Math.floor(330 / fontSize)));
   }
 
   private refreshSubtitle(): void {
