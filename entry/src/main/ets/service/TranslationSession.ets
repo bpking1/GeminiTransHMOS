@@ -217,10 +217,6 @@ export class TranslationSession {
     }
   }
 
-  getRecentOutputSubtitle(maxLines: number = 2, charsPerLine: number = 21): string {
-    return this.outputBuffer.getRecentSubtitle(maxLines, charsPerLine);
-  }
-
   async start(context: common.UIAbilityContext, settings: AppSettings): Promise<void> {
     if (this.running || this.starting || this.cleaningUp || this.cleanupTask !== undefined) {
       Log.warn(`TranslationSession start ignored: already running/starting/cleaning (running=${this.running}, starting=${this.starting})`);
@@ -342,12 +338,12 @@ export class TranslationSession {
     return this.outputBuffer.value();
   }
 
-  getRecentOutputSubtitle(maxLines: number = 2): string {
-    return this.outputBuffer.getRecentSubtitle(maxLines);
+  getRecentOutputSubtitle(maxLines: number = 2, charsPerLine: number = 21): string {
+    return this.outputBuffer.getRecentSubtitle(maxLines, charsPerLine);
   }
 
-  getRecentInputSubtitle(maxLines: number = 2): string {
-    return this.inputBuffer.getRecentSubtitle(maxLines);
+  getRecentInputSubtitle(maxLines: number = 2, charsPerLine: number = 21): string {
+    return this.inputBuffer.getRecentSubtitle(maxLines, charsPerLine);
   }
 
   isActive(): boolean {
