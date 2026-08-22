@@ -6,6 +6,15 @@ import { AppSettings } from '../model/AppSettings';
 class AudioTranscriptionConfig {
 }
 
+class SlidingWindowConfig {
+  targetTokens: string = '0';
+}
+
+class ContextWindowCompressionConfig {
+  triggerTokens: string = '0';
+  slidingWindow: SlidingWindowConfig = new SlidingWindowConfig();
+}
+
 interface TranslationConfig {
   targetLanguageCode: string;
   echoTargetLanguage: boolean;
@@ -13,14 +22,15 @@ interface TranslationConfig {
 
 interface GenerationConfig {
   responseModalities: string[];
-  inputAudioTranscription: AudioTranscriptionConfig;
-  outputAudioTranscription: AudioTranscriptionConfig;
   translationConfig: TranslationConfig;
 }
 
 interface SetupConfig {
   model: string;
   generationConfig: GenerationConfig;
+  inputAudioTranscription: AudioTranscriptionConfig;
+  outputAudioTranscription: AudioTranscriptionConfig;
+  contextWindowCompression: ContextWindowCompressionConfig;
 }
 
 interface SetupPayload {
@@ -254,13 +264,14 @@ export class GeminiLiveClient {
     };
     const generationConfig: GenerationConfig = {
       responseModalities: ['AUDIO'],
-      inputAudioTranscription: new AudioTranscriptionConfig(),
-      outputAudioTranscription: new AudioTranscriptionConfig(),
       translationConfig: translationConfig
     };
     const setupConfig: SetupConfig = {
       model: 'models/gemini-3.5-live-translate-preview',
-      generationConfig: generationConfig
+      generationConfig: generationConfig,
+      inputAudioTranscription: new AudioTranscriptionConfig(),
+      outputAudioTranscription: new AudioTranscriptionConfig(),
+      contextWindowCompression: new ContextWindowCompressionConfig()
     };
     const payload: SetupPayload = { setup: setupConfig };
     currentSocket.send(JSON.stringify(payload)).catch((error: BusinessError) => {
