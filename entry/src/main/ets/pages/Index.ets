@@ -158,7 +158,9 @@ struct Index {
               const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
               await FloatWindowManager.getInstance().show(context);
             } catch (err) {
-              this.errorText = `${err}`;
+              const msg: string = err instanceof Error ? err.message : JSON.stringify(err);
+              Log.error(`Index FloatWindow error: ${msg}`);
+              this.errorText = msg;
             }
           })
 

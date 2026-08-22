@@ -48,15 +48,33 @@ export class FloatWindowManager {
         throw new Error('无法获取 WindowStage，请重启应用后重试');
       }
 
+      Log.info('FloatWindowManager: creating subWindow on windowStage...');
       const win: window.Window = await windowStage.createSubWindow(FLOAT_WINDOW_NAME);
-
       this.floatWindow = win;
 
-      await win.resize(winWidth, winHeight);
-      await win.moveWindowTo(posX, posY);
-      await win.setWindowBackgroundColor('#00000000');
-      await win.setWindowTouchable(true);
-      await win.loadContent('pages/FloatingWindowPage');
+      Log.info('FloatWindowManager: setting UI content to pages/FloatingWindowPage...');
+      await win.setUIContent('pages/FloatingWindowPage');
+
+      try {
+        await win.resize(winWidth, winHeight);
+        await win.moveWindowTo(posX, posY);
+      } catch (e) {
+        Log.warn(`FloatWindowManager resize/move warning: ${JSON.stringify(e)}`);
+      }
+
+      try {
+        await win.setWindowBackgroundColor('#00000000');
+      } catch (e) {
+        Log.warn(`FloatWindowManager setWindowBackgroundColor warning: ${JSON.stringify(e)}`);
+      }
+
+      try {
+        await win.setWindowTouchable(true);
+      } catch (e) {
+        Log.warn(`FloatWindowManager setWindowTouchable warning: ${JSON.stringify(e)}`);
+      }
+
+      Log.info('FloatWindowManager: showing float window...');
       await win.showWindow();
       this.showing = true;
       Log.info('FloatWindowManager: float subtitle window displayed successfully');
