@@ -89,45 +89,43 @@ export class TranscriptBuffer {
     const c: string = this.committed.trim();
     const linesCount: number = Math.max(1, Math.min(5, maxLines));
 
-    if (c.length === 0) {
-      return d;
+    const fullText: string = smartConcat(c, d).replace(/[\r\n]+/g, ' ').trim();
+    if (fullText.length === 0) {
+      return '';
     }
-    const sentences: string[] = [];
-    let cur: string = '';
-    for (let i = 0; i < c.length; i++) {
-      const ch: string = c.charAt(i);
-      cur += ch;
-      if (ch === '。' || ch === '！' || ch === '？' || ch === '\n' || ch === '.' || ch === '!' || ch === '?') {
-        if (cur.trim().length > 0) {
-          sentences.push(cur.trim());
+
+    // Character budget: ~26 CJK chars / ~55 English chars per line
+    const charBudget: number = linesCount * 26;
+    if (fullText.length <= charBudget) {
+      return fullText;
+    }
+
+    const slice: string = fullText.substring(fullText.length - charBudget);
+    const p1: number = slice.indexOf('。');
+    const p2: number = slice.indexOf('！');
+    const p3: number = slice.indexOf('？');
+    const p4: number = slice.indexOf('，');
+    const p5: number = slice.indexOf('；');
+    const p6: number = slice.indexOf('. ');
+    const p7: number = slice.indexOf('! ');
+    const p8: number = slice.indexOf('? ');
+    const p9: number = slice.indexOf(', ');
+
+    const positions: number[] = [p1, p2, p3, p4, p5, p6, p7, p8, p9];
+    let minPos: number = -1;
+    for (let i = 0; i < positions.length; i++) {
+      const pos: number = positions[i];
+      if (pos >= 0 && pos < 16) {
+        if (minPos === -1 || pos < minPos) {
+          minPos = pos;
         }
-        cur = '';
       }
     }
-    if (cur.trim().length > 0) {
-      sentences.push(cur.trim());
-    }
 
-    if (linesCount === 1) {
-      if (d.length > 0) {
-        return d;
-      }
-      return sentences.length > 0 ? sentences[sentences.length - 1] : '';
+    if (minPos >= 0) {
+      return slice.substring(minPos + 1).trim();
     }
-
-    if (d.length > 0) {
-      const historicalCount: number = linesCount - 1;
-      const startIdx: number = Math.max(0, sentences.length - historicalCount);
-      const selectedHistory: string[] = sentences.slice(startIdx);
-      if (selectedHistory.length > 0) {
-        return [...selectedHistory, d].join('\n');
-      }
-      return d;
-    }
-
-    const startIdx: number = Math.max(0, sentences.length - linesCount);
-    const selectedSentences: string[] = sentences.slice(startIdx);
-    return selectedSentences.join('\n');
+    return slice.trim();
   }
 
   clear(): void {
