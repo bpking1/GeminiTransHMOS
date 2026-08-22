@@ -154,24 +154,26 @@ export class PiPManager {
     }
   }
 
+  private getCharsPerLine(): number {
+    const fontSize: number = this.currentSettings.captionFontSize || 18;
+    return Math.max(14, Math.min(28, Math.round(380 / fontSize)));
+  }
+
+  private refreshSubtitle(): void {
+    const lines: number = this.currentSettings.subtitleLineCount || 2;
+    const charsPerLine: number = this.getCharsPerLine();
+    const text: string = TranslationSession.getInstance().getRecentOutputSubtitle(lines, charsPerLine);
+    this.nodeController.update(text, this.isLiveState, this.currentSettings);
+  }
+
   private setupTranscriptListener(): void {
     const listener: SessionListener = {
       onState: (state: SessionState, status: string): void => {
         this.isLiveState = (state === SessionState.LIVE);
-        const lines: number = this.currentSettings.subtitleLineCount || 2;
-        this.nodeController.update(
-          TranslationSession.getInstance().getRecentOutputSubtitle(lines),
-          this.isLiveState,
-          this.currentSettings
-        );
+        this.refreshSubtitle();
       },
       onTranscript: (input: string, output: string): void => {
-        const lines: number = this.currentSettings.subtitleLineCount || 2;
-        this.nodeController.update(
-          TranslationSession.getInstance().getRecentOutputSubtitle(lines),
-          this.isLiveState,
-          this.currentSettings
-        );
+        this.refreshSubtitle();
       },
       onError: (message: string): void => {}
     };
@@ -180,12 +182,7 @@ export class PiPManager {
 
   updateSettings(settings: AppSettings): void {
     this.currentSettings = settings;
-    const lines: number = this.currentSettings.subtitleLineCount || 2;
-    this.nodeController.update(
-      TranslationSession.getInstance().getRecentOutputSubtitle(lines),
-      this.isLiveState,
-      this.currentSettings
-    );
+    this.refreshSubtitle();
   }
 
   async startPiP(): Promise<void> {
