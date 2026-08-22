@@ -26,19 +26,31 @@ export class SubtitleData {
   }
 }
 
+const pipScroller: Scroller = new Scroller();
+
 @Builder
 function buildPiPSubtitleView(data: SubtitleData) {
   Column() {
     if (data.displayOutput.length > 0) {
-      Text(data.displayOutput)
+      Scroll(pipScroller) {
+        Column() {
+          Text(data.displayOutput)
+            .width('100%')
+            .fontSize(data.fontSize)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#FFFFFF')
+            .lineHeight(data.fontSize * 1.38)
+            .textAlign(TextAlign.Start)
+            .textShadow({ radius: 6, color: '#FF000000', offsetY: 1 })
+            .wordBreak(WordBreak.BREAK_ALL)
+        }
         .width('100%')
-        .fontSize(data.fontSize)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#FFFFFF')
-        .lineHeight(data.fontSize * 1.36)
-        .textAlign(TextAlign.Start)
-        .textShadow({ radius: 6, color: '#FF000000', offsetY: 1 })
-        .wordBreak(WordBreak.BREAK_ALL)
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.None)
     } else {
       Text(data.isLive ? '正在聆听并实时翻译…' : 'Gemini 实时字幕已就绪')
         .width('100%')
@@ -52,7 +64,7 @@ function buildPiPSubtitleView(data: SubtitleData) {
   .height('100%')
   .padding({ left: 16, right: 16, top: 8, bottom: 8 })
   .backgroundColor('#000000')
-  .justifyContent(FlexAlign.Center)
+  .justifyContent(FlexAlign.End)
   .alignItems(HorizontalAlign.Start)
 }
 
@@ -66,12 +78,19 @@ export class PiPSubtitleNodeController extends NodeController {
     return this.builderNode.getFrameNode();
   }
 
-  update(recentSubtitle: string, isLive: boolean, settings?: AppSettings): void {
+  update(text: string, isLive: boolean, settings?: AppSettings): void {
     const fontSize: number = settings ? settings.captionFontSize : this.data.fontSize;
     const maxLines: number = settings ? settings.subtitleLineCount : this.data.maxLines;
-    this.data = new SubtitleData(recentSubtitle.trim(), fontSize, maxLines, isLive);
+    this.data = new SubtitleData(text.trim(), fontSize, maxLines, isLive);
     if (this.builderNode) {
       this.builderNode.update(this.data);
+      setTimeout(() => {
+        try {
+          pipScroller.scrollEdge(Edge.Bottom);
+        } catch (e) {
+          // ignore
+        }
+      }, 10);
     }
   }
 }
@@ -119,7 +138,9 @@ export class PiPManager {
       }
 
       const lines: number = this.currentSettings.subtitleLineCount || 2;
-      const contentHeight: number = Math.max(160, Math.min(360, lines * 65 + 60));
+      const fontSize: number = this.currentSettings.captionFontSize || 18;
+      const lineHeight: number = Math.round(fontSize * 1.38);
+      const contentHeight: number = Math.max(90, Math.min(380, lines * lineHeight + 24));
 
       const config: PiPWindow.PiPConfiguration = {
         context: context,
@@ -155,13 +176,6 @@ export class PiPManager {
   private listenerSetup: boolean = false;
   private updateScheduled: boolean = false;
 
-  private getMaxWeightPerLine(): number {
-    const fontSize: number = this.currentSettings.captionFontSize || 18;
-    // Usable width is ~300vp. Always leave 1 character safety margin (-1)
-    // so it NEVER overflows into an unintended extra line.
-    return Math.max(8, Math.floor(300 / fontSize) - 1);
-  }
-
   private refreshSubtitle(): void {
     if (this.updateScheduled) {
       return;
@@ -170,9 +184,7 @@ export class PiPManager {
     // Micro-tick batching (16ms = 60fps) ensures zero queue buildup and real-time response
     setTimeout(() => {
       this.updateScheduled = false;
-      const lines: number = this.currentSettings.subtitleLineCount || 2;
-      const maxWeight: number = this.getMaxWeightPerLine();
-      const text: string = TranslationSession.getInstance().getRecentOutputSubtitle(lines, maxWeight);
+      const text: string = TranslationSession.getInstance().getOutputTranscript();
       this.nodeController.update(text, this.isLiveState, this.currentSettings);
     }, 16);
   }
