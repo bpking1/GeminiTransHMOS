@@ -1,0 +1,21 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Gemini 实时语音翻译手机端"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "采集语音并进行实时翻译"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "实时翻译"
+    },
+    {
+      "name": "microphone_reason",
+      "value": "用于采集您要实时翻译的语音"
+    }
+  ]
+}
+

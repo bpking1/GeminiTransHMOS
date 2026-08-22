@@ -1,0 +1,12 @@
+{
+  "modelVersion": "5.0.4",
+  "name": "gemini-live-translate-harmonyos",
+  "version": "1.0.0",
+  "description": "Gemini Live Translate for HarmonyOS 6 phones",
+  "main": "",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}
+

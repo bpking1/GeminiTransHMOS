@@ -1,0 +1,9 @@
+.hvigor/
+.idea/
+.cxx/
+build/
+oh_modules/
+local.properties
+*.hap
+*.app
+

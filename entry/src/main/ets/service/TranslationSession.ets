@@ -1,0 +1,312 @@
+import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
+import { AppSettings } from '../model/AppSettings';
+import {
+  AudioCaptureSource,
+  MicrophoneCapture,
+  SystemAudioCapture
+} from './AudioCaptureService';
+import { GeminiLiveCallbacks, GeminiLiveClient } from './GeminiLiveClient';
+import { PcmAudioPlayer } from './PcmAudioPlayer';
+
+export enum SessionState {
+  IDLE = 'idle',
+  STARTING = 'starting',
+  LIVE = 'live',
+  ERROR = 'error'
+}
+
+export interface SessionListener {
+  onState: (state: SessionState, status: string) => void;
+  onTranscript: (input: string, output: string) => void;
+  onError: (message: string) => void;
+}
+
+class TranscriptBuffer {
+  private committed: string = '';
+  private draft: string = '';
+  private readonly maximumLength: number;
+
+  constructor(maximumLength: number) {
+    this.maximumLength = maximumLength;
+  }
+
+  update(fragment: string): string {
+    const text: string = fragment.trim();
+    if (text.length === 0) {
+      return this.value();
+    }
+
+    if (this.draft.length > 0 && text.startsWith(this.draft)) {
+      this.draft = text;
+    } else {
+      if (this.draft.length > 0) {
+        this.committed = `${this.committed} ${this.draft}`.trim();
+      }
+      this.draft = text;
+    }
+
+    if (this.committed.length > this.maximumLength) {
+      this.committed = this.committed.substring(this.committed.length - this.maximumLength);
+    }
+    return this.value();
+  }
+
+  value(): string {
+    return `${this.committed} ${this.draft}`.trim();
+  }
+
+  clear(): void {
+    this.committed = '';
+    this.draft = '';
+  }
+}
+
+export class TranslationSession {
+  private static readonly INSTANCE: TranslationSession = new TranslationSession();
+
+  static getInstance(): TranslationSession {
+    return TranslationSession.INSTANCE;
+  }
+
+  private readonly client: GeminiLiveClient = new GeminiLiveClient();
+  private readonly player: PcmAudioPlayer = new PcmAudioPlayer();
+  private capture: AudioCaptureSource | undefined = undefined;
+  private listener: SessionListener | undefined = undefined;
+  private state: SessionState = SessionState.IDLE;
+  private status: string = '准备就绪';
+  private running: boolean = false;
+  private starting: boolean = false;
+  private cleaningUp: boolean = false;
+  private cleanupTask: Promise<void> | undefined = undefined;
+  private playbackEnabled: boolean = false;
+  private operationId: number = 0;
+  private readonly inputBuffer: TranscriptBuffer = new TranscriptBuffer(3000);
+  private readonly outputBuffer: TranscriptBuffer = new TranscriptBuffer(5000);
+
+  private constructor() {
+    const callbacks: GeminiLiveCallbacks = {
+      onStatus: (status: string): void => {
+        this.status = status;
+        this.publishState();
+      },
+      onInputTranscript: (text: string): void => {
+        this.inputBuffer.update(text);
+        this.publishTranscripts();
+      },
+      onOutputTranscript: (text: string): void => {
+        this.outputBuffer.update(text);
+        this.publishTranscripts();
+      },
+      onAudio: (data: Uint8Array): void => {
+        if (this.playbackEnabled) {
+          this.player.enqueue(data);
+        }
+      },
+      onInterrupted: (): void => {
+        this.player.clear();
+      },
+      onDisconnected: (reason: string): void => {
+        // A failed connection rejects start() directly. Once a session is
+        // running, a later disconnect must also tear down capture and playback.
+        if (this.running && !this.cleaningUp) {
+          this.handleUnexpectedDisconnect(reason);
+        }
+      }
+    };
+    this.client.setCallbacks(callbacks);
+  }
+
+  setListener(listener: SessionListener | undefined): void {
+    this.listener = listener;
+    this.publishState();
+    this.publishTranscripts();
+  }
+
+  async start(context: common.UIAbilityContext, settings: AppSettings): Promise<void> {
+    if (this.running || this.starting || this.cleaningUp || this.cleanupTask !== undefined) {
+      return;
+    }
+    settings.normalize();
+    if (settings.apiKey.length === 0) {
+      this.setError('请先在设置中填写 Gemini API Key');
+      return;
+    }
+
+    const currentOperation: number = ++this.operationId;
+    this.starting = true;
+    this.state = SessionState.STARTING;
+    this.status = settings.audioSource === 'system' ? '准备系统内录…' : '请求麦克风权限…';
+    this.publishState();
+
+    try {
+      if (settings.audioSource === 'mic') {
+        const granted: boolean = await this.requestMicrophonePermission(context);
+        if (!granted) {
+          throw new Error('未获得麦克风权限');
+        }
+      }
+
+      this.status = '正在连接 Gemini…';
+      this.publishState();
+      await this.client.connect(settings);
+      if (currentOperation !== this.operationId) {
+        await this.cleanup();
+        return;
+      }
+
+      this.playbackEnabled = settings.playbackEnabled;
+      if (this.playbackEnabled) {
+        await this.player.start(settings.playbackVolume);
+        if (currentOperation !== this.operationId) {
+          await this.cleanup();
+          return;
+        }
+      }
+
+      const sendAudio = (chunk: Uint8Array): void => {
+        this.client.sendAudio(chunk);
+      };
+      this.capture = settings.audioSource === 'system'
+        ? new SystemAudioCapture(sendAudio)
+        : new MicrophoneCapture(sendAudio);
+
+      this.status = settings.audioSource === 'system'
+        ? '请在系统弹窗中允许音频内录…'
+        : '正在启动麦克风…';
+      this.publishState();
+      await this.capture.start();
+      if (currentOperation !== this.operationId) {
+        await this.cleanup();
+        return;
+      }
+
+      this.starting = false;
+      this.running = true;
+      this.state = SessionState.LIVE;
+      this.status = settings.audioSource === 'system' ? '正在翻译系统声音' : '正在聆听并翻译';
+      this.publishState();
+    } catch (error) {
+      if (currentOperation !== this.operationId) {
+        return;
+      }
+      const message: string = this.errorText(error);
+      await this.cleanup();
+      this.setError(message);
+    }
+  }
+
+  async stop(): Promise<void> {
+    ++this.operationId;
+    if (!this.running && !this.starting && this.capture === undefined &&
+      this.cleanupTask === undefined) {
+      this.state = SessionState.IDLE;
+      this.status = '准备就绪';
+      this.publishState();
+      return;
+    }
+
+    this.running = false;
+    this.starting = false;
+    this.state = SessionState.STARTING;
+    this.status = '正在停止…';
+    this.publishState();
+    await this.cleanup();
+    this.state = SessionState.IDLE;
+    this.status = '已停止';
+    this.publishState();
+  }
+
+  clearTranscripts(): void {
+    this.inputBuffer.clear();
+    this.outputBuffer.clear();
+    this.publishTranscripts();
+  }
+
+  isActive(): boolean {
+    return this.running || this.starting || this.cleaningUp || this.cleanupTask !== undefined;
+  }
+
+  private cleanup(): Promise<void> {
+    if (this.cleanupTask !== undefined) {
+      return this.cleanupTask;
+    }
+    this.cleanupTask = this.performCleanup();
+    return this.cleanupTask;
+  }
+
+  private async performCleanup(): Promise<void> {
+    this.cleaningUp = true;
+    this.running = false;
+    this.starting = false;
+    try {
+      const currentCapture: AudioCaptureSource | undefined = this.capture;
+      this.capture = undefined;
+      if (currentCapture !== undefined) {
+        try {
+          await currentCapture.stop();
+        } catch (error) {
+          console.warn(`Stopping audio capture failed: ${JSON.stringify(error)}`);
+        }
+      }
+      try {
+        await this.player.stop();
+      } catch (error) {
+        console.warn(`Stopping audio playback failed: ${JSON.stringify(error)}`);
+      }
+      try {
+        await this.client.stop();
+      } catch (error) {
+        console.warn(`Closing Gemini session failed: ${JSON.stringify(error)}`);
+      }
+      this.playbackEnabled = false;
+    } finally {
+      this.cleaningUp = false;
+      this.cleanupTask = undefined;
+    }
+  }
+
+  private handleUnexpectedDisconnect(reason: string): void {
+    ++this.operationId;
+    this.cleanup().then(() => {
+      this.setError(reason);
+    }).catch((error: Error) => {
+      this.setError(`${reason}；清理资源失败：${error.message}`);
+    });
+  }
+
+  private async requestMicrophonePermission(context: common.UIAbilityContext): Promise<boolean> {
+    const atManager = abilityAccessCtrl.createAtManager();
+    try {
+      const result: PermissionRequestResult = await atManager.requestPermissionsFromUser(
+        context, ['ohos.permission.MICROPHONE']);
+      return result.authResults.length > 0 && result.authResults[0] === 0;
+    } catch (error) {
+      console.error(`Requesting microphone permission failed: ${JSON.stringify(error)}`);
+      return false;
+    }
+  }
+
+  private setError(message: string): void {
+    this.running = false;
+    this.starting = false;
+    this.state = SessionState.ERROR;
+    this.status = message;
+    this.publishState();
+    this.listener?.onError(message);
+  }
+
+  private publishState(): void {
+    this.listener?.onState(this.state, this.status);
+  }
+
+  private publishTranscripts(): void {
+    this.listener?.onTranscript(this.inputBuffer.value(), this.outputBuffer.value());
+  }
+
+  private errorText(error: Object): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return JSON.stringify(error) ?? '未知错误';
+  }
+}

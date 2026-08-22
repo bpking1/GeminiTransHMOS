@@ -1,0 +1,21 @@
+{
+  "modelVersion": "5.0.4",
+  "dependencies": {},
+  "execution": {
+    "analyze": "default",
+    "daemon": true,
+    "incremental": true,
+    "parallel": true,
+    "typeCheck": true
+  },
+  "logging": {
+    "level": "info"
+  },
+  "debugging": {
+    "stacktrace": false
+  },
+  "nodeOptions": {
+    "maxOldSpaceSize": 4096
+  }
+}
+

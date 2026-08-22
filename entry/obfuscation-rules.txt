@@ -1,0 +1,6 @@
+# Keep the native module entry points stable.
+-keep-property-name
+startPlaybackCapture
+getPlaybackCaptureState
+readPlaybackPcm
+stopPlaybackCapture
