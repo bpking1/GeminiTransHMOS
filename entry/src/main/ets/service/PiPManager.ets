@@ -15,27 +15,15 @@ import { SessionListener, SessionState, TranslationSession } from './Translation
 export class SubtitleData {
   output: string = '';
   displayOutput: string = '';
-  bgOpacity: number = 75;
-  fontSize: number = 22;
+  fontSize: number = 18;
   isLive: boolean = false;
-}
 
-function getBackgroundColor(opacityPercent: number): string {
-  if (opacityPercent <= 0) {
-    return '#00000000';
+  constructor(output: string = '', displayOutput: string = '', fontSize: number = 18, isLive: boolean = false) {
+    this.output = output;
+    this.displayOutput = displayOutput;
+    this.fontSize = fontSize;
+    this.isLive = isLive;
   }
-  const alphaVal: number = Math.max(0, Math.min(255, Math.round((opacityPercent / 100) * 255)));
-  const alphaHex: string = alphaVal.toString(16).padStart(2, '0').toUpperCase();
-  return `#${alphaHex}0F0D1A`;
-}
-
-function getBorderColor(opacityPercent: number): string {
-  if (opacityPercent <= 10) {
-    return '#00000000';
-  }
-  const alphaVal: number = Math.max(0, Math.min(80, Math.round((opacityPercent / 100) * 55)));
-  const alphaHex: string = alphaVal.toString(16).padStart(2, '0').toUpperCase();
-  return `#${alphaHex}6366F1`;
 }
 
 function extractRecentCaption(text: string, maxLen: number = 85): string {
@@ -73,23 +61,21 @@ function buildPiPSubtitleView(data: SubtitleData) {
         .lineHeight(data.fontSize * 1.35)
         .textAlign(TextAlign.Center)
         .textShadow({ radius: 6, color: '#FF000000', offsetY: 1 })
-        .maxLines(3)
+        .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     } else {
       Text(data.isLive ? '正在实时翻译…' : 'Gemini 翻译已就绪')
         .width('100%')
-        .fontSize(Math.max(12, data.fontSize - 4))
-        .fontColor('#CBD5E1')
+        .fontSize(Math.max(11, data.fontSize - 3))
+        .fontColor('#94A3B8')
         .textAlign(TextAlign.Center)
         .textShadow({ radius: 4, color: '#CC000000', offsetY: 1 })
     }
   }
   .width('100%')
   .height('100%')
-  .padding({ left: 16, right: 16, top: 10, bottom: 10 })
-  .backgroundColor(getBackgroundColor(data.bgOpacity))
-  .borderRadius(18)
-  .border({ width: data.bgOpacity > 10 ? 1 : 0, color: getBorderColor(data.bgOpacity) })
+  .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+  .backgroundColor('#000000')
   .justifyContent(FlexAlign.Center)
   .alignItems(HorizontalAlign.Center)
 }
@@ -105,18 +91,9 @@ export class PiPSubtitleNodeController extends NodeController {
   }
 
   update(output: string, isLive: boolean, settings?: AppSettings): void {
-    const nextData: SubtitleData = new SubtitleData();
-    nextData.output = output;
-    nextData.displayOutput = extractRecentCaption(output, 85);
-    nextData.isLive = isLive;
-    if (settings) {
-      nextData.bgOpacity = settings.pipBgOpacity;
-      nextData.fontSize = settings.captionFontSize;
-    } else {
-      nextData.bgOpacity = this.data.bgOpacity;
-      nextData.fontSize = this.data.fontSize;
-    }
-    this.data = nextData;
+    const fontSize: number = settings ? settings.captionFontSize : this.data.fontSize;
+    const displayOutput: string = extractRecentCaption(output, 85);
+    this.data = new SubtitleData(output, displayOutput, fontSize, isLive);
     if (this.builderNode) {
       this.builderNode.update(this.data);
     }
@@ -158,7 +135,7 @@ export class PiPManager {
     }
 
     try {
-      Log.info('PiPManager: Initializing Pure Subtitle PiPWindow...');
+      Log.info('PiPManager: Initializing Slim Subtitle PiPWindow...');
       try {
         this.currentSettings = await SettingsStore.load(context);
       } catch (e) {
@@ -169,8 +146,8 @@ export class PiPManager {
         context: context,
         componentController: xComponentController,
         templateType: PiPWindow.PiPTemplateType.VIDEO_PLAY,
-        contentWidth: 840,
-        contentHeight: 280,
+        contentWidth: 880,
+        contentHeight: 190,
         customUIController: this.nodeController
       };
 

@@ -324,33 +324,7 @@ struct SettingsPage {
 
       Divider().color('#ECE9F1')
 
-      this.FieldLabel('悬浮窗背景透明度', '0% 为纯透明字幕无底色，100% 为纯黑不透底')
-      Row() {
-        Slider({
-          value: this.pipBgOpacity,
-          min: 0,
-          max: 100,
-          step: 5,
-          style: SliderStyle.OutSet
-        })
-          .layoutWeight(1)
-          .selectedColor('#725FF0')
-          .trackColor('#E1DDEA')
-          .onChange((value: number) => {
-            this.pipBgOpacity = value;
-          })
-        Text(`${Math.round(this.pipBgOpacity)}%`)
-          .width(44)
-          .fontSize(14)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#725FF0')
-          .textAlign(TextAlign.End)
-      }
-      .width('100%')
-
-      Divider().color('#ECE9F1')
-
-      this.FieldLabel('译文字号', '跟随系统缩放，并可在此微调')
+      this.FieldLabel('译文字号', '可调至小号紧凑字号，并同步缩放画中画悬浮字幕')
       Row() {
         Slider({
           value: this.captionFontSize,
