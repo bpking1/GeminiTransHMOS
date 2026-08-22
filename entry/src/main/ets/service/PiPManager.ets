@@ -154,19 +154,34 @@ export class PiPManager {
     }
   }
 
+  private listenerSetup: boolean = false;
+  private updateScheduled: boolean = false;
+
   private getCharsPerLine(): number {
     const fontSize: number = this.currentSettings.captionFontSize || 18;
     return Math.max(14, Math.min(28, Math.round(380 / fontSize)));
   }
 
   private refreshSubtitle(): void {
-    const lines: number = this.currentSettings.subtitleLineCount || 2;
-    const charsPerLine: number = this.getCharsPerLine();
-    const text: string = TranslationSession.getInstance().getRecentOutputSubtitle(lines, charsPerLine);
-    this.nodeController.update(text, this.isLiveState, this.currentSettings);
+    if (this.updateScheduled) {
+      return;
+    }
+    this.updateScheduled = true;
+    // Micro-tick batching (16ms = 60fps) ensures zero queue buildup and real-time response
+    setTimeout(() => {
+      this.updateScheduled = false;
+      const lines: number = this.currentSettings.subtitleLineCount || 2;
+      const charsPerLine: number = this.getCharsPerLine();
+      const text: string = TranslationSession.getInstance().getRecentOutputSubtitle(lines, charsPerLine);
+      this.nodeController.update(text, this.isLiveState, this.currentSettings);
+    }, 16);
   }
 
   private setupTranscriptListener(): void {
+    if (this.listenerSetup) {
+      return;
+    }
+    this.listenerSetup = true;
     const listener: SessionListener = {
       onState: (state: SessionState, status: string): void => {
         this.isLiveState = (state === SessionState.LIVE);

@@ -105,8 +105,15 @@ function buildRollingLines(fullText: string, maxLines: number, charsPerLine: num
     return '';
   }
 
+  // Only process recent tail of text (last 3 screens of text) for instant calculation
+  const maxScanLength: number = maxLines * charsPerLine * 3;
+  let scanText: string = clean;
+  if (scanText.length > maxScanLength) {
+    scanText = scanText.substring(scanText.length - maxScanLength).trim();
+  }
+
   const lines: string[] = [];
-  let remaining: string = clean;
+  let remaining: string = scanText;
 
   while (remaining.length > 0) {
     if (remaining.length <= charsPerLine) {
