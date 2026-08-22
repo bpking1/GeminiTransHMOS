@@ -6,6 +6,7 @@ import {
   languageName
 } from '../model/AppSettings';
 import { SettingsStore } from '../service/SettingsStore';
+import { Log } from '../util/Logger';
 
 @Entry
 @Component
@@ -37,7 +38,9 @@ struct SettingsPage {
       this.playbackVolume = settings.playbackVolume;
       this.showOriginal = settings.showOriginal;
       this.captionFontSize = settings.captionFontSize;
+      Log.info(`SettingsPage loaded: apiBase=${this.apiBase}, targetLang=${this.targetLanguage}, hasApiKey=${this.apiKey.length > 0}`);
     } catch (error) {
+      Log.error(`SettingsPage load failed: ${JSON.stringify(error)}`);
       this.saveStatus = `读取设置失败：${JSON.stringify(error)}`;
     }
   }
@@ -59,16 +62,18 @@ struct SettingsPage {
       settings.showOriginal = this.showOriginal;
       settings.captionFontSize = this.captionFontSize;
 
+      Log.info(`Saving settings: apiBase=${settings.apiBase}, targetLang=${settings.targetLanguage}, source=${settings.audioSource}`);
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await SettingsStore.save(context, settings);
       this.saving = false;
       try {
         this.getUIContext().getRouter().back();
       } catch (error) {
-        console.error(`Failed to navigate back: ${JSON.stringify(error)}`);
+        Log.error(`Failed to navigate back: ${JSON.stringify(error)}`);
       }
     } catch (error) {
       this.saving = false;
+      Log.error(`Save settings failed: ${JSON.stringify(error)}`);
       this.saveStatus = `保存失败：${JSON.stringify(error)}`;
     }
   }

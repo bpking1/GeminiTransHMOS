@@ -1,5 +1,6 @@
 import { audio } from '@kit.AudioKit';
 import playbackCaptureNative from 'libentry.so';
+import { Log } from '../util/Logger';
 
 export type PcmChunkHandler = (chunk: Uint8Array) => void;
 
@@ -52,15 +53,18 @@ export class MicrophoneCapture implements AudioCaptureSource {
 
   async start(): Promise<void> {
     try {
+      Log.info('Starting microphone with SOURCE_TYPE_LIVE...');
       await this.startWithSource(audio.SourceType.SOURCE_TYPE_LIVE);
+      Log.info('Microphone started with SOURCE_TYPE_LIVE');
     } catch (liveSourceError) {
       // SOURCE_TYPE_LIVE enables acoustic echo cancellation on API 20, but
       // support still depends on the phone. Keep microphone translation usable
       // by falling back to the broadly supported recognition source.
-      console.info(`Live microphone source unavailable: ${JSON.stringify(liveSourceError)}`);
+      Log.warn(`Live microphone source unavailable: ${JSON.stringify(liveSourceError)}, falling back to VOICE_RECOGNITION...`);
       await this.releaseCurrent();
       try {
         await this.startWithSource(audio.SourceType.SOURCE_TYPE_VOICE_RECOGNITION);
+        Log.info('Microphone started with SOURCE_TYPE_VOICE_RECOGNITION');
       } catch (fallbackError) {
         await this.releaseCurrent();
         if (fallbackError instanceof Error) {

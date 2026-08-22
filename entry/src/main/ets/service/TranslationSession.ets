@@ -1,5 +1,6 @@
 import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
 import { AppSettings } from '../model/AppSettings';
+import { Log } from '../util/Logger';
 import {
   AudioCaptureSource,
   MicrophoneCapture,
@@ -124,9 +125,12 @@ export class TranslationSession {
 
   async start(context: common.UIAbilityContext, settings: AppSettings): Promise<void> {
     if (this.running || this.starting || this.cleaningUp || this.cleanupTask !== undefined) {
+      Log.warn(`TranslationSession start ignored: already running/starting/cleaning (running=${this.running}, starting=${this.starting})`);
       return;
     }
     settings.normalize();
+    Log.info(`Starting TranslationSession: source=${settings.audioSource}, targetLang=${settings.targetLanguage}, apiBase=${settings.apiBase}, playback=${settings.playbackEnabled}`);
+
     if (settings.apiKey.length === 0) {
       this.setError('请先在设置中填写 Gemini API Key');
       return;
@@ -140,7 +144,9 @@ export class TranslationSession {
 
     try {
       if (settings.audioSource === 'mic') {
+        Log.info('Requesting microphone permission...');
         const granted: boolean = await this.requestMicrophonePermission(context);
+        Log.info(`Microphone permission result: ${granted}`);
         if (!granted) {
           throw new Error('未获得麦克风权限');
         }
@@ -148,16 +154,20 @@ export class TranslationSession {
 
       this.status = '正在连接 Gemini…';
       this.publishState();
+      Log.info('Connecting GeminiLiveClient...');
       await this.client.connect(settings);
       if (currentOperation !== this.operationId) {
+        Log.warn('Session operation changed during connect, cleaning up...');
         await this.cleanup();
         return;
       }
 
       this.playbackEnabled = settings.playbackEnabled;
       if (this.playbackEnabled) {
+        Log.info(`Starting audio player (volume: ${settings.playbackVolume})...`);
         await this.player.start(settings.playbackVolume);
         if (currentOperation !== this.operationId) {
+          Log.warn('Session operation changed during player start, cleaning up...');
           await this.cleanup();
           return;
         }
@@ -174,8 +184,10 @@ export class TranslationSession {
         ? '请在系统弹窗中允许音频内录…'
         : '正在启动麦克风…';
       this.publishState();
+      Log.info(`Starting audio capture: ${settings.audioSource}...`);
       await this.capture.start();
       if (currentOperation !== this.operationId) {
+        Log.warn('Session operation changed during capture start, cleaning up...');
         await this.cleanup();
         return;
       }
@@ -185,17 +197,20 @@ export class TranslationSession {
       this.state = SessionState.LIVE;
       this.status = settings.audioSource === 'system' ? '正在翻译系统声音' : '正在聆听并翻译';
       this.publishState();
+      Log.info('Translation session is LIVE and active!');
     } catch (error) {
       if (currentOperation !== this.operationId) {
         return;
       }
       const message: string = this.errorText(error);
+      Log.error(`TranslationSession start failed: ${message}`);
       await this.cleanup();
       this.setError(message);
     }
   }
 
   async stop(): Promise<void> {
+    Log.info('Stopping TranslationSession...');
     ++this.operationId;
     if (!this.running && !this.starting && this.capture === undefined &&
       this.cleanupTask === undefined) {
@@ -214,6 +229,7 @@ export class TranslationSession {
     this.state = SessionState.IDLE;
     this.status = '已停止';
     this.publishState();
+    Log.info('TranslationSession stopped successfully');
   }
 
   clearTranscripts(): void {
@@ -266,6 +282,7 @@ export class TranslationSession {
   }
 
   private handleUnexpectedDisconnect(reason: string): void {
+    Log.error(`handleUnexpectedDisconnect: ${reason}`);
     ++this.operationId;
     this.cleanup().then(() => {
       this.setError(reason);
@@ -281,12 +298,13 @@ export class TranslationSession {
         context, ['ohos.permission.MICROPHONE']);
       return result.authResults.length > 0 && result.authResults[0] === 0;
     } catch (error) {
-      console.error(`Requesting microphone permission failed: ${JSON.stringify(error)}`);
+      Log.error(`Requesting microphone permission failed: ${JSON.stringify(error)}`);
       return false;
     }
   }
 
   private setError(message: string): void {
+    Log.error(`Session error set: ${message}`);
     this.running = false;
     this.starting = false;
     this.state = SessionState.ERROR;

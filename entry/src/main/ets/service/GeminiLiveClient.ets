@@ -2,6 +2,7 @@ import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { webSocket } from '@kit.NetworkKit';
 import { AppSettings } from '../model/AppSettings';
+import { Log } from '../util/Logger';
 
 class AudioTranscriptionConfig {
 }
@@ -127,6 +128,10 @@ export class GeminiLiveClient {
     this.open = false;
     this.ready = false;
 
+    const url: string = this.buildWebSocketUrl(settings.apiBase, settings.apiKey);
+    const maskedUrl: string = this.maskUrl(url);
+    Log.info(`Connecting to Gemini WebSocket: ${maskedUrl}`);
+
     const socket: webSocket.WebSocket = webSocket.createWebSocket();
     this.socket = socket;
     this.bindEvents(socket);
@@ -135,15 +140,21 @@ export class GeminiLiveClient {
       this.readyResolve = resolve;
       this.readyReject = reject;
       this.connectTimer = setTimeout(() => {
-        this.failConnection('连接 Gemini 超时');
+        Log.error(`Gemini connection timeout (20s). socket.open=${this.open}, ready=${this.ready}`);
+        const timeoutMsg = this.open
+          ? '连接 Gemini 超时（已连接服务器，但等待模型响应超时，请检查 API Key 是否有效）'
+          : '连接 Gemini 超时（无法连接到服务器，模拟器请检查网络连接、代理或配置 API Base URL）';
+        this.failConnection(timeoutMsg);
       }, 20000);
     });
 
-    const url: string = this.buildWebSocketUrl(settings.apiBase, settings.apiKey);
     this.callbacks?.onStatus('正在连接 Gemini…');
     try {
+      Log.info('Calling socket.connect()...');
       await socket.connect(url);
+      Log.info('socket.connect() returned, awaiting open event...');
     } catch (error) {
+      Log.error(`socket.connect() exception: ${JSON.stringify(error)}`);
       this.failConnection(`无法建立网络连接：${JSON.stringify(error)}`);
     }
     return readyPromise;
@@ -160,6 +171,7 @@ export class GeminiLiveClient {
     const realtimeInput: RealtimeInput = { audio: audioBlob };
     const payload: AudioPayload = { realtimeInput: realtimeInput };
     this.socket.send(JSON.stringify(payload)).catch((error: BusinessError) => {
+      Log.error(`Failed to send audio chunk: ${error.message ?? JSON.stringify(error)}`);
       this.callbacks?.onStatus(`发送音频失败：${error.message}`);
     });
   }
@@ -183,17 +195,19 @@ export class GeminiLiveClient {
     }
 
     try {
+      Log.info('Sending audioStreamEnd...');
       const realtimeInput: AudioStreamEndInput = { audioStreamEnd: true };
       const endPayload: AudioStreamEndPayload = { realtimeInput: realtimeInput };
       await current.send(JSON.stringify(endPayload));
     } catch (error) {
-      console.info(`Audio stream end was not sent: ${JSON.stringify(error)}`);
+      Log.info(`Audio stream end was not sent: ${JSON.stringify(error)}`);
     }
 
     try {
+      Log.info('Closing WebSocket connection...');
       await current.close({ code: 1000, reason: 'User stopped translation' });
     } catch (error) {
-      console.info(`WebSocket close failed: ${JSON.stringify(error)}`);
+      Log.warn(`WebSocket close failed: ${JSON.stringify(error)}`);
     }
   }
 
@@ -203,13 +217,14 @@ export class GeminiLiveClient {
         return;
       }
       if (error) {
-        this.failConnection(`WebSocket 打开失败：${error.message}`);
+        Log.error(`WebSocket on('open') error: code=${error.code}, message=${error.message}, raw=${JSON.stringify(error)}`);
+        this.failConnection(`WebSocket 打开失败（${error.code ?? ''}）：${error.message ?? JSON.stringify(error)}`);
         return;
       }
       this.open = true;
+      Log.info(`WebSocket opened successfully! Value: ${JSON.stringify(value)}`);
       this.callbacks?.onStatus('正在初始化翻译模型…');
       this.sendSetup();
-      console.info(`Gemini WebSocket opened: ${JSON.stringify(value)}`);
     });
 
     socket.on('message', (error: BusinessError, value: string | ArrayBuffer) => {
@@ -217,10 +232,12 @@ export class GeminiLiveClient {
         return;
       }
       if (error) {
+        Log.error(`WebSocket on('message') error: ${error.message ?? JSON.stringify(error)}`);
         this.callbacks?.onStatus(`接收数据失败：${error.message}`);
         return;
       }
       if (typeof value === 'string') {
+        Log.debug(`Received message (${value.length} chars)`);
         this.handleMessage(value);
       }
     });
@@ -229,13 +246,14 @@ export class GeminiLiveClient {
       if (this.socket !== socket) {
         return;
       }
+      Log.warn(`WebSocket on('close'): code=${value?.code}, reason=${value?.reason}, error=${JSON.stringify(error)}`);
       this.open = false;
       this.ready = false;
       this.clearConnectTimer();
       if (!this.intentionalClose) {
         const detail: string = error
           ? error.message
-          : `${value.code} ${value.reason}`.trim();
+          : `${value?.code ?? ''} ${value?.reason ?? ''}`.trim();
         this.rejectReady(`连接已断开：${detail}`);
         this.notifyDisconnected(`连接已断开：${detail}`);
       }
@@ -245,8 +263,10 @@ export class GeminiLiveClient {
       if (this.socket !== socket) {
         return;
       }
+      Log.error(`WebSocket on('error'): code=${error?.code}, message=${error?.message}, raw=${JSON.stringify(error)}`);
       if (!this.intentionalClose) {
-        this.failConnection(`Gemini 连接错误：${error.message}`);
+        const detail: string = error?.message ?? (error?.code ? `错误码 ${error.code}` : JSON.stringify(error));
+        this.failConnection(`Gemini 连接错误：${detail}`);
       }
     });
   }
@@ -274,7 +294,13 @@ export class GeminiLiveClient {
       contextWindowCompression: new ContextWindowCompressionConfig()
     };
     const payload: SetupPayload = { setup: setupConfig };
-    currentSocket.send(JSON.stringify(payload)).catch((error: BusinessError) => {
+    const payloadJson: string = JSON.stringify(payload);
+    Log.info(`Sending setup message: ${payloadJson}`);
+
+    currentSocket.send(payloadJson).then(() => {
+      Log.info('Setup message sent successfully, awaiting setupComplete...');
+    }).catch((error: BusinessError) => {
+      Log.error(`Failed to send setup message: ${error.message ?? JSON.stringify(error)}`);
       this.failConnection(`模型初始化失败：${error.message}`);
     });
   }
@@ -283,11 +309,14 @@ export class GeminiLiveClient {
     try {
       const message: GeminiServerMessage = JSON.parse(raw) as GeminiServerMessage;
       if (message.error !== undefined) {
-        this.failConnection(`Gemini 返回错误：${message.error.message ?? '未知错误'}`);
+        const errDetail: string = message.error.message ?? JSON.stringify(message.error);
+        Log.error(`Gemini returned error message: ${errDetail}`);
+        this.failConnection(`Gemini 返回错误：${errDetail}`);
         return;
       }
 
       if (message.setupComplete !== undefined && !this.ready) {
+        Log.info('Gemini setupComplete received! Translation is ready.');
         this.ready = true;
         this.clearConnectTimer();
         this.callbacks?.onStatus('翻译已就绪');
@@ -304,16 +333,19 @@ export class GeminiLiveClient {
         return;
       }
       if (content.interrupted === true) {
+        Log.info('Gemini turn interrupted');
         this.callbacks?.onInterrupted();
       }
 
       const inputText: string = content.inputTranscription?.text ?? '';
       if (inputText.length > 0) {
+        Log.info(`Input transcript: ${inputText}`);
         this.callbacks?.onInputTranscript(inputText);
       }
 
       const outputText: string = content.outputTranscription?.text ?? '';
       if (outputText.length > 0) {
+        Log.info(`Output transcript: ${outputText}`);
         this.callbacks?.onOutputTranscript(outputText);
       }
 
@@ -328,10 +360,12 @@ export class GeminiLiveClient {
         // when this server message contains no transcription field.
         const partText: string = part.text ?? '';
         if (outputText.length === 0 && partText.length > 0) {
+          Log.info(`Output text part: ${partText}`);
           this.callbacks?.onOutputTranscript(partText);
         }
       }
     } catch (error) {
+      Log.error(`Failed to parse Gemini message: ${JSON.stringify(error)}, raw=${raw.substring(0, 200)}`);
       this.callbacks?.onStatus(`解析 Gemini 数据失败：${JSON.stringify(error)}`);
     }
   }
@@ -358,7 +392,18 @@ export class GeminiLiveClient {
     return `${base}${endpoint}?key=${encodeURIComponent(apiKey)}`;
   }
 
+  private maskUrl(url: string): string {
+    const keyIdx = url.indexOf('key=');
+    if (keyIdx >= 0) {
+      const keyVal = url.substring(keyIdx + 4);
+      const masked = keyVal.length > 8 ? `${keyVal.substring(0, 4)}...${keyVal.substring(keyVal.length - 4)}` : '***';
+      return `${url.substring(0, keyIdx)}key=${masked}`;
+    }
+    return url;
+  }
+
   private failConnection(message: string): void {
+    Log.error(`failConnection: ${message}`);
     this.callbacks?.onStatus(message);
     this.rejectReady(message);
     this.notifyDisconnected(message);

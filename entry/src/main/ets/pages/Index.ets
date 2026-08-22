@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { AppSettings, languageName } from '../model/AppSettings';
 import { SettingsStore } from '../service/SettingsStore';
+import { Log } from '../util/Logger';
 import {
   SessionListener,
   SessionState,
@@ -41,6 +42,7 @@ struct Index {
   private attachSessionListener(): void {
     const listener: SessionListener = {
       onState: (state: SessionState, status: string): void => {
+        Log.info(`Index onState: state=${state}, status=${status}`);
         this.sessionState = state;
         this.statusText = status;
         if (state !== SessionState.ERROR) {
@@ -55,6 +57,7 @@ struct Index {
         }, 20);
       },
       onError: (message: string): void => {
+        Log.error(`Index onError: ${message}`);
         this.errorText = message;
       }
     };
@@ -71,12 +74,15 @@ struct Index {
       this.showOriginal = this.settings.showOriginal;
       this.captionFontSize = this.settings.captionFontSize;
       this.settingsLoaded = true;
+      Log.info(`Settings loaded: targetLang=${this.targetLanguage}, source=${this.audioSource}, hasApiKey=${this.settings.apiKey.length > 0}`);
     } catch (error) {
+      Log.error(`Failed to load settings: ${JSON.stringify(error)}`);
       this.errorText = `读取设置失败：${JSON.stringify(error)}`;
     }
   }
 
   private async toggleSession(): Promise<void> {
+    Log.info(`User clicked toggleSession. isActive=${this.session.isActive()}`);
     if (this.session.isActive()) {
       await this.session.stop();
       return;
@@ -89,13 +95,14 @@ struct Index {
   }
 
   private async openSettings(): Promise<void> {
+    Log.info('User navigating to SettingsPage');
     if (this.session.isActive()) {
       await this.session.stop();
     }
     try {
       await this.getUIContext().getRouter().pushUrl({ url: 'pages/SettingsPage' });
     } catch (error) {
-      console.error(`Failed to navigate to settings: ${JSON.stringify(error)}`);
+      Log.error(`Failed to navigate to settings: ${JSON.stringify(error)}`);
     }
   }
 
