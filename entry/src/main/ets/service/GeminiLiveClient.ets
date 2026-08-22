@@ -224,7 +224,11 @@ export class GeminiLiveClient {
       this.open = true;
       Log.info(`WebSocket opened successfully! Value: ${JSON.stringify(value)}`);
       this.callbacks?.onStatus('正在初始化翻译模型…');
-      this.sendSetup();
+      setTimeout(() => {
+        if (this.open && this.socket === socket) {
+          this.sendSetup();
+        }
+      }, 50);
     });
 
     socket.on('message', (error: BusinessError, value: string | ArrayBuffer) => {
@@ -236,9 +240,21 @@ export class GeminiLiveClient {
         this.callbacks?.onStatus(`接收数据失败：${error.message}`);
         return;
       }
+      let rawText: string = '';
       if (typeof value === 'string') {
-        Log.debug(`Received message (${value.length} chars)`);
-        this.handleMessage(value);
+        rawText = value;
+      } else if (value) {
+        try {
+          const decoder = util.TextDecoder.create('utf-8');
+          rawText = decoder.decodeToString(new Uint8Array(value as ArrayBuffer));
+        } catch (e) {
+          Log.error(`Failed to decode binary message: ${JSON.stringify(e)}`);
+          return;
+        }
+      }
+      Log.info(`WebSocket message received (${rawText.length} chars): ${rawText.substring(0, 150)}`);
+      if (rawText.length > 0) {
+        this.handleMessage(rawText);
       }
     });
 
