@@ -89,10 +89,12 @@ export class TranscriptBuffer {
     const c: string = this.committed.trim();
     const targetLines: number = Math.max(1, Math.min(5, maxLines));
 
-    const historyLines: string[] = splitIntoLines(c, 20);
-    const draftLines: string[] = splitIntoLines(d, 20);
-    const allLines: string[] = [...historyLines, ...draftLines];
+    const combined: string = smartConcat(c, d);
+    if (combined.length === 0) {
+      return '';
+    }
 
+    const allLines: string[] = splitIntoLines(combined, 22);
     if (allLines.length === 0) {
       return '';
     }
@@ -108,7 +110,7 @@ export class TranscriptBuffer {
   }
 }
 
-function splitIntoLines(text: string, maxLineChars: number = 20): string[] {
+function splitIntoLines(text: string, maxLineChars: number = 22): string[] {
   const clean: string = text.replace(/[\r\n]+/g, ' ').trim();
   if (clean.length === 0) {
     return [];
