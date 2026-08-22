@@ -21,6 +21,7 @@ struct SettingsPage {
   @State private showOriginal: boolean = true;
   @State private captionFontSize: number = 25;
   @State private pipBgOpacity: number = 75;
+  @State private subtitleLineCount: number = 2;
   @State private saveStatus: string = '';
   @State private saving: boolean = false;
 
@@ -41,6 +42,7 @@ struct SettingsPage {
       this.showOriginal = settings.showOriginal;
       this.captionFontSize = settings.captionFontSize;
       this.pipBgOpacity = settings.pipBgOpacity;
+      this.subtitleLineCount = settings.subtitleLineCount;
       Log.info(`SettingsPage loaded: apiBase=${this.apiBase}, targetLang=${this.targetLanguage}, hasApiKey=${this.apiKey.length > 0}`);
     } catch (error) {
       Log.error(`SettingsPage load failed: ${JSON.stringify(error)}`);
@@ -65,6 +67,7 @@ struct SettingsPage {
       settings.showOriginal = this.showOriginal;
       settings.captionFontSize = this.captionFontSize;
       settings.pipBgOpacity = this.pipBgOpacity;
+      settings.subtitleLineCount = this.subtitleLineCount;
 
       Log.info(`Saving settings: apiBase=${settings.apiBase}, targetLang=${settings.targetLanguage}, source=${settings.audioSource}`);
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -319,6 +322,26 @@ struct SettingsPage {
           .onChange((isOn: boolean) => {
             this.showOriginal = isOn;
           })
+      }
+      .width('100%')
+
+      Divider().color('#ECE9F1')
+
+      this.FieldLabel('悬浮字幕行数', '最后一行实时流式翻译，上方固定显示历史句子')
+      Row({ space: 8 }) {
+        ForEach([1, 2, 3, 4], (lines: number) => {
+          Button(`${lines} 行`)
+            .layoutWeight(1)
+            .height(38)
+            .fontSize(13)
+            .fontWeight(this.subtitleLineCount === lines ? FontWeight.Bold : FontWeight.Normal)
+            .fontColor(this.subtitleLineCount === lines ? '#FFFFFF' : '#5E5868')
+            .backgroundColor(this.subtitleLineCount === lines ? '#725FF0' : '#F0EEF7')
+            .borderRadius(10)
+            .onClick(() => {
+              this.subtitleLineCount = lines;
+            })
+        })
       }
       .width('100%')
 

@@ -84,9 +84,11 @@ export class TranscriptBuffer {
     return smartConcat(this.committed, this.draft);
   }
 
-  getRecentSubtitle(): string {
+  getRecentSubtitle(maxLines: number = 2): string {
     const d: string = this.draft.trim();
     const c: string = this.committed.trim();
+    const linesCount: number = Math.max(1, Math.min(5, maxLines));
+
     if (c.length === 0) {
       return d;
     }
@@ -106,17 +108,26 @@ export class TranscriptBuffer {
       sentences.push(cur.trim());
     }
 
-    const lastSent: string = sentences.length > 0 ? sentences[sentences.length - 1] : '';
+    if (linesCount === 1) {
+      if (d.length > 0) {
+        return d;
+      }
+      return sentences.length > 0 ? sentences[sentences.length - 1] : '';
+    }
+
     if (d.length > 0) {
-      if (lastSent.length > 0 && lastSent !== d) {
-        return `${lastSent}\n${d}`;
+      const historicalCount: number = linesCount - 1;
+      const startIdx: number = Math.max(0, sentences.length - historicalCount);
+      const selectedHistory: string[] = sentences.slice(startIdx);
+      if (selectedHistory.length > 0) {
+        return [...selectedHistory, d].join('\n');
       }
       return d;
     }
-    if (sentences.length >= 2) {
-      return `${sentences[sentences.length - 2]}\n${sentences[sentences.length - 1]}`;
-    }
-    return lastSent;
+
+    const startIdx: number = Math.max(0, sentences.length - linesCount);
+    const selectedSentences: string[] = sentences.slice(startIdx);
+    return selectedSentences.join('\n');
   }
 
   clear(): void {
@@ -322,12 +333,12 @@ export class TranslationSession {
     return this.outputBuffer.value();
   }
 
-  getRecentOutputSubtitle(): string {
-    return this.outputBuffer.getRecentSubtitle();
+  getRecentOutputSubtitle(maxLines: number = 2): string {
+    return this.outputBuffer.getRecentSubtitle(maxLines);
   }
 
-  getRecentInputSubtitle(): string {
-    return this.inputBuffer.getRecentSubtitle();
+  getRecentInputSubtitle(maxLines: number = 2): string {
+    return this.inputBuffer.getRecentSubtitle(maxLines);
   }
 
   isActive(): boolean {

@@ -46,6 +46,7 @@ export class AppSettings {
   showOriginal: boolean = true;
   captionFontSize: number = 25;
   pipBgOpacity: number = 75;
+  subtitleLineCount: number = 2;
 
   normalize(): void {
     this.apiKey = this.apiKey.trim();
@@ -56,6 +57,7 @@ export class AppSettings {
     this.playbackVolume = Math.max(0, Math.min(1, this.playbackVolume));
     this.captionFontSize = Math.max(10, Math.min(36, Math.round(this.captionFontSize)));
     this.pipBgOpacity = Math.max(0, Math.min(100, Math.round(this.pipBgOpacity)));
+    this.subtitleLineCount = Math.max(1, Math.min(5, Math.round(this.subtitleLineCount)));
     if (this.audioSource !== 'mic' && this.audioSource !== 'system') {
       this.audioSource = 'system';
     }

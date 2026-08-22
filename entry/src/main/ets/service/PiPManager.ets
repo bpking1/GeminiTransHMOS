@@ -15,11 +15,13 @@ import { SessionListener, SessionState, TranslationSession } from './Translation
 export class SubtitleData {
   displayOutput: string = '';
   fontSize: number = 18;
+  maxLines: number = 2;
   isLive: boolean = false;
 
-  constructor(displayOutput: string = '', fontSize: number = 18, isLive: boolean = false) {
+  constructor(displayOutput: string = '', fontSize: number = 18, maxLines: number = 2, isLive: boolean = false) {
     this.displayOutput = displayOutput;
     this.fontSize = fontSize;
+    this.maxLines = maxLines;
     this.isLive = isLive;
   }
 }
@@ -36,12 +38,12 @@ function buildPiPSubtitleView(data: SubtitleData) {
         .lineHeight(data.fontSize * 1.38)
         .textAlign(TextAlign.Center)
         .textShadow({ radius: 6, color: '#FF000000', offsetY: 1 })
-        .maxLines(2)
+        .maxLines(data.maxLines)
         .textOverflow({ overflow: TextOverflow.None })
     } else {
       Text(data.isLive ? '正在聆听并实时翻译…' : 'Gemini 实时字幕已就绪')
         .width('100%')
-        .fontSize(Math.max(12, data.fontSize - 2))
+        .fontSize(Math.max(11, data.fontSize - 2))
         .fontColor('#94A3B8')
         .textAlign(TextAlign.Center)
         .textShadow({ radius: 4, color: '#CC000000', offsetY: 1 })
@@ -49,7 +51,7 @@ function buildPiPSubtitleView(data: SubtitleData) {
   }
   .width('100%')
   .height('100%')
-  .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+  .padding({ left: 14, right: 14, top: 6, bottom: 6 })
   .backgroundColor('#000000')
   .justifyContent(FlexAlign.Center)
   .alignItems(HorizontalAlign.Center)
@@ -67,7 +69,8 @@ export class PiPSubtitleNodeController extends NodeController {
 
   update(recentSubtitle: string, isLive: boolean, settings?: AppSettings): void {
     const fontSize: number = settings ? settings.captionFontSize : this.data.fontSize;
-    this.data = new SubtitleData(recentSubtitle.trim(), fontSize, isLive);
+    const maxLines: number = settings ? settings.subtitleLineCount : this.data.maxLines;
+    this.data = new SubtitleData(recentSubtitle.trim(), fontSize, maxLines, isLive);
     if (this.builderNode) {
       this.builderNode.update(this.data);
     }
@@ -109,19 +112,22 @@ export class PiPManager {
     }
 
     try {
-      Log.info('PiPManager: Initializing Subtitle PiPWindow...');
+      Log.info('PiPManager: Initializing Multi-line Subtitle PiPWindow...');
       try {
         this.currentSettings = await SettingsStore.load(context);
       } catch (e) {
         Log.warn(`PiPManager loadSettings: ${JSON.stringify(e)}`);
       }
 
+      const lines: number = this.currentSettings.subtitleLineCount || 2;
+      const contentHeight: number = Math.max(160, Math.min(360, lines * 65 + 60));
+
       const config: PiPWindow.PiPConfiguration = {
         context: context,
         componentController: xComponentController,
         templateType: PiPWindow.PiPTemplateType.VIDEO_PLAY,
         contentWidth: 880,
-        contentHeight: 220,
+        contentHeight: contentHeight,
         customUIController: this.nodeController
       };
 
@@ -151,15 +157,17 @@ export class PiPManager {
     const listener: SessionListener = {
       onState: (state: SessionState, status: string): void => {
         this.isLiveState = (state === SessionState.LIVE);
+        const lines: number = this.currentSettings.subtitleLineCount || 2;
         this.nodeController.update(
-          TranslationSession.getInstance().getRecentOutputSubtitle(),
+          TranslationSession.getInstance().getRecentOutputSubtitle(lines),
           this.isLiveState,
           this.currentSettings
         );
       },
       onTranscript: (input: string, output: string): void => {
+        const lines: number = this.currentSettings.subtitleLineCount || 2;
         this.nodeController.update(
-          TranslationSession.getInstance().getRecentOutputSubtitle(),
+          TranslationSession.getInstance().getRecentOutputSubtitle(lines),
           this.isLiveState,
           this.currentSettings
         );
@@ -171,8 +179,9 @@ export class PiPManager {
 
   updateSettings(settings: AppSettings): void {
     this.currentSettings = settings;
+    const lines: number = this.currentSettings.subtitleLineCount || 2;
     this.nodeController.update(
-      TranslationSession.getInstance().getRecentOutputSubtitle(),
+      TranslationSession.getInstance().getRecentOutputSubtitle(lines),
       this.isLiveState,
       this.currentSettings
     );

@@ -19,6 +19,7 @@ export class SettingsStore {
     settings.showOriginal = await store.get('show_original', true) as boolean;
     settings.captionFontSize = await store.get('caption_font_size', 25) as number;
     settings.pipBgOpacity = await store.get('pip_bg_opacity', 75) as number;
+    settings.subtitleLineCount = await store.get('subtitle_line_count', 2) as number;
     settings.normalize();
     return settings;
   }
@@ -35,6 +36,7 @@ export class SettingsStore {
     await store.put('show_original', settings.showOriginal);
     await store.put('caption_font_size', settings.captionFontSize);
     await store.put('pip_bg_opacity', settings.pipBgOpacity);
+    await store.put('subtitle_line_count', settings.subtitleLineCount);
     await store.flush();
   }
 }
