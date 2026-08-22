@@ -165,7 +165,9 @@ export class SystemAudioCapture implements AudioCaptureSource {
           Log.warn(`SystemAudioCapture: state changed to ${state} (3=NOT_AUTHORIZED, 4=FAILED)`);
           this.clearPollTimer();
           playbackCaptureNative.stopPlaybackCapture();
-          reject(new Error(state === 3 ? '未获得系统内录授权（请在系统弹窗中允许，或检查设备是否支持内录）' : '系统内录启动失败或不可用'));
+          reject(new Error(state === 3
+            ? '系统内录被系统安全策略拦截（鸿蒙底层 PlaybackCapture 接口限制普通应用调用，未弹出授权，请切换为“麦克风”模式使用）'
+            : '系统内录启动失败或设备不支持'));
           return;
         }
 
