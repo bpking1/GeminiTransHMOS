@@ -123,7 +123,7 @@ void OnScreenCaptureBufferAvailable(OH_AVScreenCapture* capture, OH_AVBuffer* bu
 void OnScreenCaptureError(OH_AVScreenCapture* capture, int32_t errorCode, void* userData)
 {
     OH_LOG_ERROR(LOG_APP, "OnScreenCaptureError callback received: errorCode=%{public}d", errorCode);
-    if (errorCode == AV_SCREEN_CAPTURE_ERR_OPERATE_NOT_PERMIT || errorCode == AV_SCREEN_CAPTURE_ERR_NO_PERMISSION) {
+    if (errorCode == AV_SCREEN_CAPTURE_ERR_OPERATE_NOT_PERMIT) {
         g_state.store(NOT_AUTHORIZED);
     } else {
         g_state.store(FAILED);
