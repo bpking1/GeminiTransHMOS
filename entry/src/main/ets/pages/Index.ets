@@ -25,6 +25,7 @@ struct Index {
   private readonly session: TranslationSession = TranslationSession.getInstance();
   private settings: AppSettings = new AppSettings();
   private readonly pageScroller: Scroller = new Scroller();
+  private readonly transcriptScroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.attachSessionListener();
@@ -53,8 +54,8 @@ struct Index {
         this.inputText = input;
         this.outputText = output;
         setTimeout(() => {
-          this.pageScroller.scrollEdge(Edge.Bottom);
-        }, 20);
+          this.transcriptScroller.scrollEdge(Edge.Bottom);
+        }, 30);
       },
       onError: (message: string): void => {
         Log.error(`Index onError: ${message}`);
@@ -239,50 +240,69 @@ struct Index {
   private TranscriptPanel() {
     Column() {
       Row() {
-        Text('译文')
-          .fontSize(13)
+        Text('实时字幕')
+          .fontSize(14)
           .fontWeight(FontWeight.Bold)
           .fontColor('#725FF0')
         Blank()
-        if (this.outputText.length > 0) {
-          Text('长按文字可复制')
+        if (this.outputText.length > 0 || this.inputText.length > 0) {
+          Text('清空')
+            .fontSize(12)
+            .fontColor('#725FF0')
+            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+            .backgroundColor('#F0EEF7')
+            .borderRadius(6)
+            .onClick(() => {
+              this.session.clearTranscripts();
+            })
+            .margin({ right: 8 })
+          Text('长按可复制')
             .fontSize(11)
             .fontColor('#AAA6B5')
         }
       }
       .width('100%')
 
-      Text(this.outputText.length > 0 ? this.outputText : '译文会实时显示在这里')
-        .width('100%')
-        .fontSize(this.captionFontSize)
-        .fontWeight(this.outputText.length > 0 ? FontWeight.Bold : FontWeight.Normal)
-        .fontColor(this.outputText.length > 0 ? '#171521' : '#B9B5C2')
-        .lineHeight(this.captionFontSize * 1.45)
-        .copyOption(CopyOptions.LocalDevice)
-        .margin({ top: 14, bottom: this.showOriginal ? 18 : 4 })
+      Scroll(this.transcriptScroller) {
+        Column() {
+          Text(this.outputText.length > 0 ? this.outputText : '译文会实时显示在这里')
+            .width('100%')
+            .fontSize(this.captionFontSize)
+            .fontWeight(this.outputText.length > 0 ? FontWeight.Bold : FontWeight.Normal)
+            .fontColor(this.outputText.length > 0 ? '#171521' : '#B9B5C2')
+            .lineHeight(this.captionFontSize * 1.45)
+            .copyOption(CopyOptions.LocalDevice)
+            .margin({ top: 12, bottom: this.showOriginal ? 16 : 4 })
 
-      if (this.showOriginal) {
-        Divider()
-          .color('#ECE9F0')
-        Text('原文')
-          .width('100%')
-          .fontSize(12)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#8A8597')
-          .margin({ top: 17 })
-        Text(this.inputText.length > 0 ? this.inputText : '等待语音输入…')
-          .width('100%')
-          .fontSize(16)
-          .fontColor(this.inputText.length > 0 ? '#716C7E' : '#BBB7C4')
-          .lineHeight(24)
-          .copyOption(CopyOptions.LocalDevice)
-          .margin({ top: 9 })
+          if (this.showOriginal) {
+            Divider()
+              .color('#ECE9F0')
+            Text('原文')
+              .width('100%')
+              .fontSize(12)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#8A8597')
+              .margin({ top: 14 })
+            Text(this.inputText.length > 0 ? this.inputText : '等待语音输入…')
+              .width('100%')
+              .fontSize(15)
+              .fontColor(this.inputText.length > 0 ? '#716C7E' : '#BBB7C4')
+              .lineHeight(22)
+              .copyOption(CopyOptions.LocalDevice)
+              .margin({ top: 6, bottom: 4 })
+          }
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
       }
+      .width('100%')
+      .constraintSize({ minHeight: 180, maxHeight: 360 })
+      .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
-    .constraintSize({ minHeight: this.showOriginal ? 270 : 210 })
-    .padding(20)
+    .padding(18)
     .backgroundColor('#FFFFFF')
     .borderRadius(24)
     .shadow({ radius: 24, color: '#130C1530', offsetY: 8 })

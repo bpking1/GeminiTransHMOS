@@ -81,8 +81,8 @@ export class TranslationSession {
   private cleanupTask: Promise<void> | undefined = undefined;
   private playbackEnabled: boolean = false;
   private operationId: number = 0;
-  private readonly inputBuffer: TranscriptBuffer = new TranscriptBuffer(3000);
-  private readonly outputBuffer: TranscriptBuffer = new TranscriptBuffer(5000);
+  private readonly inputBuffer: TranscriptBuffer = new TranscriptBuffer(800);
+  private readonly outputBuffer: TranscriptBuffer = new TranscriptBuffer(1200);
 
   private constructor() {
     const callbacks: GeminiLiveCallbacks = {
