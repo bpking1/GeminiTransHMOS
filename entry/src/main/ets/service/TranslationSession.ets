@@ -87,51 +87,60 @@ export class TranscriptBuffer {
   getRecentSubtitle(maxLines: number = 2): string {
     const d: string = this.draft.trim();
     const c: string = this.committed.trim();
-    const linesCount: number = Math.max(1, Math.min(5, maxLines));
+    const targetLines: number = Math.max(1, Math.min(5, maxLines));
 
-    const fullText: string = smartConcat(c, d).replace(/[\r\n]+/g, ' ').trim();
-    if (fullText.length === 0) {
+    const historyLines: string[] = splitIntoLines(c, 20);
+    const draftLines: string[] = splitIntoLines(d, 20);
+    const allLines: string[] = [...historyLines, ...draftLines];
+
+    if (allLines.length === 0) {
       return '';
     }
 
-    // Character budget: ~26 CJK chars / ~55 English chars per line
-    const charBudget: number = linesCount * 26;
-    if (fullText.length <= charBudget) {
-      return fullText;
-    }
-
-    const slice: string = fullText.substring(fullText.length - charBudget);
-    const p1: number = slice.indexOf('。');
-    const p2: number = slice.indexOf('！');
-    const p3: number = slice.indexOf('？');
-    const p4: number = slice.indexOf('，');
-    const p5: number = slice.indexOf('；');
-    const p6: number = slice.indexOf('. ');
-    const p7: number = slice.indexOf('! ');
-    const p8: number = slice.indexOf('? ');
-    const p9: number = slice.indexOf(', ');
-
-    const positions: number[] = [p1, p2, p3, p4, p5, p6, p7, p8, p9];
-    let minPos: number = -1;
-    for (let i = 0; i < positions.length; i++) {
-      const pos: number = positions[i];
-      if (pos >= 0 && pos < 16) {
-        if (minPos === -1 || pos < minPos) {
-          minPos = pos;
-        }
-      }
-    }
-
-    if (minPos >= 0) {
-      return slice.substring(minPos + 1).trim();
-    }
-    return slice.trim();
+    const startIdx: number = Math.max(0, allLines.length - targetLines);
+    const resultLines: string[] = allLines.slice(startIdx);
+    return resultLines.join('\n');
   }
 
   clear(): void {
     this.committed = '';
     this.draft = '';
   }
+}
+
+function splitIntoLines(text: string, maxLineChars: number = 20): string[] {
+  const clean: string = text.replace(/[\r\n]+/g, ' ').trim();
+  if (clean.length === 0) {
+    return [];
+  }
+  const lines: string[] = [];
+  let remaining: string = clean;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLineChars) {
+      lines.push(remaining);
+      break;
+    }
+
+    let breakIdx: number = -1;
+    for (let i = maxLineChars; i >= Math.max(8, maxLineChars - 8); i--) {
+      const ch: string = remaining.charAt(i);
+      if (ch === '。' || ch === '！' || ch === '？' || ch === '，' || ch === '；' || ch === '、' ||
+          ch === '.' || ch === '!' || ch === '?' || ch === ',' || ch === ' ') {
+        breakIdx = i + 1;
+        break;
+      }
+    }
+
+    if (breakIdx === -1) {
+      breakIdx = maxLineChars;
+    }
+
+    lines.push(remaining.substring(0, breakIdx).trim());
+    remaining = remaining.substring(breakIdx).trim();
+  }
+
+  return lines;
 }
 
 export class TranslationSession {
