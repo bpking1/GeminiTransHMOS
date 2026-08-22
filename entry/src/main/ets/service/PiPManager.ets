@@ -16,10 +16,14 @@ export class SubtitleData {
   output: string = '';
   displayOutput: string = '';
   bgOpacity: number = 75;
+  fontSize: number = 22;
   isLive: boolean = false;
 }
 
 function getBackgroundColor(opacityPercent: number): string {
+  if (opacityPercent <= 0) {
+    return '#00000000';
+  }
   const alphaVal: number = Math.max(0, Math.min(255, Math.round((opacityPercent / 100) * 255)));
   const alphaHex: string = alphaVal.toString(16).padStart(2, '0').toUpperCase();
   return `#${alphaHex}0F0D1A`;
@@ -63,19 +67,21 @@ function buildPiPSubtitleView(data: SubtitleData) {
     if (data.displayOutput.length > 0) {
       Text(data.displayOutput)
         .width('100%')
-        .fontSize(18)
+        .fontSize(data.fontSize)
         .fontWeight(FontWeight.Bold)
         .fontColor('#FFFFFF')
-        .lineHeight(26)
+        .lineHeight(data.fontSize * 1.35)
         .textAlign(TextAlign.Center)
+        .textShadow({ radius: 6, color: '#FF000000', offsetY: 1 })
         .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     } else {
       Text(data.isLive ? '正在实时翻译…' : 'Gemini 翻译已就绪')
         .width('100%')
-        .fontSize(15)
+        .fontSize(Math.max(12, data.fontSize - 4))
         .fontColor('#CBD5E1')
         .textAlign(TextAlign.Center)
+        .textShadow({ radius: 4, color: '#CC000000', offsetY: 1 })
     }
   }
   .width('100%')
@@ -99,12 +105,18 @@ export class PiPSubtitleNodeController extends NodeController {
   }
 
   update(output: string, isLive: boolean, settings?: AppSettings): void {
-    this.data.output = output;
-    this.data.displayOutput = extractRecentCaption(output, 85);
-    this.data.isLive = isLive;
+    const nextData: SubtitleData = new SubtitleData();
+    nextData.output = output;
+    nextData.displayOutput = extractRecentCaption(output, 85);
+    nextData.isLive = isLive;
     if (settings) {
-      this.data.bgOpacity = settings.pipBgOpacity;
+      nextData.bgOpacity = settings.pipBgOpacity;
+      nextData.fontSize = settings.captionFontSize;
+    } else {
+      nextData.bgOpacity = this.data.bgOpacity;
+      nextData.fontSize = this.data.fontSize;
     }
+    this.data = nextData;
     if (this.builderNode) {
       this.builderNode.update(this.data);
     }

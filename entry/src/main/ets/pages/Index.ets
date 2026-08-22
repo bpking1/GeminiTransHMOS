@@ -501,6 +501,7 @@ struct Index {
         .width(1)
         .height(1)
         .opacity(0.01)
+        .backgroundColor(Color.Transparent)
     }
     .width('100%')
     .height('100%')

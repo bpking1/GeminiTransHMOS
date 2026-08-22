@@ -354,8 +354,8 @@ struct SettingsPage {
       Row() {
         Slider({
           value: this.captionFontSize,
-          min: 18,
-          max: 34,
+          min: 10,
+          max: 36,
           step: 1,
           style: SliderStyle.OutSet
         })
