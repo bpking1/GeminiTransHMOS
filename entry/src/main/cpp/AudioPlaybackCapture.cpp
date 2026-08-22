@@ -8,8 +8,10 @@
 #include <vector>
 
 #include <hilog/log.h>
-#include <ohaudio/native_audiocapturer.h>
-#include <ohaudio/native_audiostreambuilder.h>
+#include <multimedia/player_framework/native_avbuffer.h>
+#include <multimedia/player_framework/native_avscreen_capture.h>
+#include <multimedia/player_framework/native_avscreen_capture_base.h>
+#include <multimedia/player_framework/native_avscreen_capture_errors.h>
 
 #undef LOG_DOMAIN
 #undef LOG_TAG
@@ -20,8 +22,6 @@ namespace {
 
 constexpr int32_t SAMPLE_RATE = 48000;
 constexpr int32_t CHANNEL_COUNT = 2;
-constexpr uint32_t CAPTURE_MODE = AUDIOSTREAM_PLAYBACKCAPTURE_MODE_MEDIA |
-    AUDIOSTREAM_PLAYBACKCAPTURE_MODE_EXCLUDING_SELF;
 constexpr size_t RING_CAPACITY = 48000 * 2 * 2 * 2; // Two seconds of stereo PCM16.
 
 enum CaptureState : int32_t {
@@ -33,7 +33,7 @@ enum CaptureState : int32_t {
 };
 
 std::mutex g_captureMutex;
-OH_AudioCapturer* g_capturer = nullptr;
+OH_AVScreenCapture* g_screenCapture = nullptr;
 std::atomic<int32_t> g_state{IDLE};
 
 std::mutex g_ringMutex;
@@ -100,42 +100,45 @@ size_t PopRing(uint8_t* output, size_t requested)
     return length;
 }
 
-void OnPlaybackData(OH_AudioCapturer*, void*, void* audioData, int32_t audioDataSize)
+void OnScreenCaptureBufferAvailable(OH_AVScreenCapture* capture, OH_AVBuffer* buffer,
+    OH_AVScreenCaptureBufferType bufferType, int64_t timestamp, void* userData)
 {
-    if (g_state.load() != RUNNING || audioData == nullptr || audioDataSize <= 0) {
+    if (buffer == nullptr) {
         return;
     }
-    PushRing(static_cast<uint8_t*>(audioData), static_cast<size_t>(audioDataSize));
+
+    if (bufferType == OH_SCREEN_CAPTURE_BUFFERTYPE_AUDIO_INNER) {
+        if (g_state.load() == WAITING_AUTHORIZATION) {
+            g_state.store(RUNNING);
+            OH_LOG_INFO(LOG_APP, "OnScreenCaptureBufferAvailable: received inner audio stream, state -> RUNNING");
+        }
+        uint8_t* addr = OH_AVBuffer_GetAddr(buffer);
+        OH_AVCodecBufferAttr attr;
+        if (OH_AVBuffer_GetBufferAttr(buffer, &attr) == AV_ERR_OK && addr != nullptr && attr.size > 0) {
+            PushRing(addr + attr.offset, static_cast<size_t>(attr.size));
+        }
+    }
 }
 
-void OnPlaybackCaptureStarted(OH_AudioCapturer* capturer, void*,
-    OH_AudioStream_PlaybackCaptureStartState state)
+void OnScreenCaptureError(OH_AVScreenCapture* capture, int32_t errorCode, void* userData)
 {
-    OH_LOG_INFO(LOG_APP, "OnPlaybackCaptureStarted callback received: state=%{public}d (0=SUCCESS, 1=FAILED, 2=NOT_AUTHORIZED)",
-        static_cast<int>(state));
-    OH_AudioCapturer* toRelease = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_captureMutex);
-        // The user can cancel while the system authorization sheet is open.
-        // Ignore a late callback if this capturer has already been released.
-        if (g_capturer != capturer || g_state.load() != WAITING_AUTHORIZATION) {
-            OH_LOG_WARN(LOG_APP, "OnPlaybackCaptureStarted: capturer mismatch or not waiting");
-            return;
-        }
-        if (state == AUDIOSTREAM_PLAYBACKCAPTURE_START_STATE_SUCCESS) {
-            OH_LOG_INFO(LOG_APP, "OnPlaybackCaptureStarted: successfully started playback capture!");
-            g_state.store(RUNNING);
-            return;
-        }
-        g_state.store(state == AUDIOSTREAM_PLAYBACKCAPTURE_START_STATE_NOT_AUTHORIZED
-            ? NOT_AUTHORIZED
-            : FAILED);
-        toRelease = g_capturer;
-        g_capturer = nullptr;
+    OH_LOG_ERROR(LOG_APP, "OnScreenCaptureError callback received: errorCode=%{public}d", errorCode);
+    if (errorCode == AV_SCREEN_CAPTURE_ERR_OPERATE_NOT_PERMIT || errorCode == AV_SCREEN_CAPTURE_ERR_NO_PERMISSION) {
+        g_state.store(NOT_AUTHORIZED);
+    } else {
+        g_state.store(FAILED);
     }
-    if (toRelease != nullptr) {
-        OH_LOG_WARN(LOG_APP, "OnPlaybackCaptureStarted: releasing capturer due to state=%{public}d", static_cast<int>(state));
-        OH_AudioCapturer_Release(toRelease);
+}
+
+void OnScreenCaptureStateChange(OH_AVScreenCapture* capture, OH_AVScreenCaptureStateCode stateCode, void* userData)
+{
+    OH_LOG_INFO(LOG_APP, "OnScreenCaptureStateChange callback received: stateCode=%{public}d", static_cast<int>(stateCode));
+    if (stateCode == OH_SCREEN_CAPTURE_STATE_STARTED) {
+        g_state.store(RUNNING);
+    } else if (stateCode == OH_SCREEN_CAPTURE_STATE_CANCELED) {
+        g_state.store(NOT_AUTHORIZED);
+    } else if (stateCode == OH_SCREEN_CAPTURE_STATE_STOPPED_BY_CALL || stateCode == OH_SCREEN_CAPTURE_STATE_STOPPED_BY_USER) {
+        g_state.store(IDLE);
     }
 }
 
@@ -148,11 +151,11 @@ napi_value CreateInt(napi_env env, int32_t value)
 
 napi_value StartPlaybackCapture(napi_env env, napi_callback_info)
 {
-    OH_LOG_INFO(LOG_APP, "StartPlaybackCapture called");
+    OH_LOG_INFO(LOG_APP, "StartPlaybackCapture called (using AVScreenCapture)");
     {
         std::lock_guard<std::mutex> lock(g_captureMutex);
-        if (g_capturer != nullptr) {
-            OH_LOG_WARN(LOG_APP, "StartPlaybackCapture: capturer already exists");
+        if (g_screenCapture != nullptr) {
+            OH_LOG_WARN(LOG_APP, "StartPlaybackCapture: screen capture already running");
             return CreateInt(env, -2);
         }
     }
@@ -160,70 +163,58 @@ napi_value StartPlaybackCapture(napi_env env, napi_callback_info)
     ResetRing();
     g_state.store(WAITING_AUTHORIZATION);
 
-    OH_AudioStreamBuilder* builder = nullptr;
-    OH_AudioStream_Result result = OH_AudioStreamBuilder_Create(&builder, AUDIOSTREAM_TYPE_CAPTURER);
-    if (result != AUDIOSTREAM_SUCCESS || builder == nullptr) {
-        OH_LOG_ERROR(LOG_APP, "OH_AudioStreamBuilder_Create failed: %{public}d", static_cast<int>(result));
+    OH_AVScreenCapture* capture = OH_AVScreenCapture_Create();
+    if (capture == nullptr) {
+        OH_LOG_ERROR(LOG_APP, "OH_AVScreenCapture_Create failed");
         g_state.store(FAILED);
-        return CreateInt(env, static_cast<int32_t>(result));
+        return CreateInt(env, -1);
     }
 
-    result = OH_AudioStreamBuilder_SetSamplingRate(builder, SAMPLE_RATE);
-    if (result == AUDIOSTREAM_SUCCESS) {
-        result = OH_AudioStreamBuilder_SetChannelCount(builder, CHANNEL_COUNT);
-    }
-    if (result == AUDIOSTREAM_SUCCESS) {
-        result = OH_AudioStreamBuilder_SetSampleFormat(builder, AUDIOSTREAM_SAMPLE_S16LE);
-    }
-    if (result == AUDIOSTREAM_SUCCESS) {
-        result = OH_AudioStreamBuilder_SetEncodingType(builder, AUDIOSTREAM_ENCODING_TYPE_RAW);
-    }
-    if (result == AUDIOSTREAM_SUCCESS) {
-        result = OH_AudioStreamBuilder_SetCapturerReadDataCallback(builder, OnPlaybackData, nullptr);
-    }
-    if (result == AUDIOSTREAM_SUCCESS) {
-        result = OH_AudioStreamBuilder_SetPlaybackCaptureMode(builder, CAPTURE_MODE);
-    }
-    if (result != AUDIOSTREAM_SUCCESS) {
-        OH_LOG_ERROR(LOG_APP, "OH_AudioStreamBuilder configuration failed: %{public}d", static_cast<int>(result));
-        OH_AudioStreamBuilder_Destroy(builder);
-        g_state.store(FAILED);
-        return CreateInt(env, static_cast<int32_t>(result));
-    }
+    OH_AVScreenCapture_SetDataCallback(capture, OnScreenCaptureBufferAvailable, nullptr);
+    OH_AVScreenCapture_SetErrorCallback(capture, OnScreenCaptureError, nullptr);
+    OH_AVScreenCapture_SetStateCallback(capture, OnScreenCaptureStateChange, nullptr);
 
-    OH_AudioCapturer* capturer = nullptr;
-    result = OH_AudioStreamBuilder_GenerateCapturer(builder, &capturer);
-    OH_AudioStreamBuilder_Destroy(builder);
-    if (result != AUDIOSTREAM_SUCCESS || capturer == nullptr) {
-        OH_LOG_ERROR(LOG_APP, "OH_AudioStreamBuilder_GenerateCapturer failed: %{public}d", static_cast<int>(result));
+    OH_AVScreenCaptureConfig config;
+    std::memset(&config, 0, sizeof(config));
+    config.captureMode = OH_CAPTURE_HOME_SCREEN;
+    config.dataType = OH_ORIGINAL_STREAM;
+
+    config.audioInfo.innerCapInfo.audioSampleRate = SAMPLE_RATE;
+    config.audioInfo.innerCapInfo.audioChannels = CHANNEL_COUNT;
+    config.audioInfo.innerCapInfo.audioSource = OH_ALL_PLAYBACK;
+
+    config.videoInfo.videoCapInfo.videoFrameWidth = 720;
+    config.videoInfo.videoCapInfo.videoFrameHeight = 1280;
+    config.videoInfo.videoCapInfo.videoSource = OH_VIDEO_SOURCE_SURFACE_RGBA;
+
+    int32_t initRes = OH_AVScreenCapture_Init(capture, config);
+    OH_LOG_INFO(LOG_APP, "OH_AVScreenCapture_Init result=%{public}d", initRes);
+    if (initRes != AV_SCREEN_CAPTURE_ERR_OK) {
+        OH_LOG_ERROR(LOG_APP, "OH_AVScreenCapture_Init failed: %{public}d", initRes);
+        OH_AVScreenCapture_Release(capture);
         g_state.store(FAILED);
-        return CreateInt(env, static_cast<int32_t>(result));
+        return CreateInt(env, initRes);
     }
 
     {
         std::lock_guard<std::mutex> lock(g_captureMutex);
-        g_capturer = capturer;
+        g_screenCapture = capture;
     }
 
-    OH_LOG_INFO(LOG_APP, "Requesting Playback Capture Start...");
-    result = OH_AudioCapturer_RequestPlaybackCaptureStart(
-        capturer, OnPlaybackCaptureStarted, nullptr);
-    OH_LOG_INFO(LOG_APP, "OH_AudioCapturer_RequestPlaybackCaptureStart returned: %{public}d", static_cast<int>(result));
-    if (result != AUDIOSTREAM_SUCCESS) {
-        bool shouldRelease = false;
+    int32_t startRes = OH_AVScreenCapture_StartScreenCapture(capture);
+    OH_LOG_INFO(LOG_APP, "OH_AVScreenCapture_StartScreenCapture result=%{public}d", startRes);
+    if (startRes != AV_SCREEN_CAPTURE_ERR_OK) {
+        OH_LOG_ERROR(LOG_APP, "OH_AVScreenCapture_StartScreenCapture failed: %{public}d", startRes);
         {
             std::lock_guard<std::mutex> lock(g_captureMutex);
-            if (g_capturer == capturer) {
-                g_capturer = nullptr;
-                shouldRelease = true;
-            }
+            g_screenCapture = nullptr;
         }
-        if (shouldRelease) {
-            OH_AudioCapturer_Release(capturer);
-        }
+        OH_AVScreenCapture_Release(capture);
         g_state.store(FAILED);
+        return CreateInt(env, startRes);
     }
-    return CreateInt(env, static_cast<int32_t>(result));
+
+    return CreateInt(env, 0);
 }
 
 napi_value GetPlaybackCaptureState(napi_env env, napi_callback_info)
@@ -258,24 +249,22 @@ napi_value ReadPlaybackPcm(napi_env env, napi_callback_info info)
 
 napi_value StopPlaybackCapture(napi_env env, napi_callback_info)
 {
-    OH_AudioCapturer* capturer = nullptr;
+    OH_LOG_INFO(LOG_APP, "StopPlaybackCapture called");
+    OH_AVScreenCapture* capture = nullptr;
     {
         std::lock_guard<std::mutex> lock(g_captureMutex);
-        capturer = g_capturer;
-        g_capturer = nullptr;
+        capture = g_screenCapture;
+        g_screenCapture = nullptr;
     }
 
-    int32_t resultCode = 0;
-    if (capturer != nullptr) {
-        OH_AudioStream_Result stopResult = OH_AudioCapturer_Stop(capturer);
-        OH_AudioStream_Result releaseResult = OH_AudioCapturer_Release(capturer);
-        resultCode = stopResult != AUDIOSTREAM_SUCCESS
-            ? static_cast<int32_t>(stopResult)
-            : static_cast<int32_t>(releaseResult);
+    if (capture != nullptr) {
+        OH_AVScreenCapture_StopScreenCapture(capture);
+        OH_AVScreenCapture_Release(capture);
     }
+
     g_state.store(IDLE);
     ResetRing();
-    return CreateInt(env, resultCode);
+    return CreateInt(env, 0);
 }
 
 } // namespace
