@@ -15,6 +15,10 @@
     {
       "name": "microphone_reason",
       "value": "用于采集您要实时翻译的语音"
+    },
+    {
+      "name": "float_window_reason",
+      "value": "用于在其他应用上方显示实时翻译字幕悬浮窗"
     }
   ]
 }

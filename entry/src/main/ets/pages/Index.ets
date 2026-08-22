@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { AppSettings, languageName } from '../model/AppSettings';
+import { FloatWindowManager } from '../service/FloatWindowManager';
 import { SettingsStore } from '../service/SettingsStore';
 import { Log } from '../util/Logger';
 import {
@@ -26,43 +27,39 @@ struct Index {
   private settings: AppSettings = new AppSettings();
   private readonly pageScroller: Scroller = new Scroller();
   private readonly transcriptScroller: Scroller = new Scroller();
+  private readonly sessionListener: SessionListener = {
+    onState: (state: SessionState, status: string): void => {
+      Log.info(`Index onState: state=${state}, status=${status}`);
+      this.sessionState = state;
+      this.statusText = status;
+      if (state !== SessionState.ERROR) {
+        this.errorText = '';
+      }
+    },
+    onTranscript: (input: string, output: string): void => {
+      this.inputText = input;
+      this.outputText = output;
+      setTimeout(() => {
+        this.transcriptScroller.scrollEdge(Edge.Bottom);
+      }, 30);
+    },
+    onError: (message: string): void => {
+      Log.error(`Index onError: ${message}`);
+      this.errorText = message;
+    }
+  };
 
   aboutToAppear(): void {
-    this.attachSessionListener();
+    this.session.addListener(this.sessionListener);
   }
 
   onPageShow(): void {
-    this.attachSessionListener();
+    this.session.addListener(this.sessionListener);
     this.loadSettings();
   }
 
   aboutToDisappear(): void {
-    this.session.setListener(undefined);
-  }
-
-  private attachSessionListener(): void {
-    const listener: SessionListener = {
-      onState: (state: SessionState, status: string): void => {
-        Log.info(`Index onState: state=${state}, status=${status}`);
-        this.sessionState = state;
-        this.statusText = status;
-        if (state !== SessionState.ERROR) {
-          this.errorText = '';
-        }
-      },
-      onTranscript: (input: string, output: string): void => {
-        this.inputText = input;
-        this.outputText = output;
-        setTimeout(() => {
-          this.transcriptScroller.scrollEdge(Edge.Bottom);
-        }, 30);
-      },
-      onError: (message: string): void => {
-        Log.error(`Index onError: ${message}`);
-        this.errorText = message;
-      }
-    };
-    this.session.setListener(listener);
+    this.session.removeListener(this.sessionListener);
   }
 
   private async loadSettings(): Promise<void> {
@@ -147,16 +144,36 @@ struct Index {
 
       Blank()
 
-      Button('设置')
-        .height(44)
-        .fontSize(15)
-        .fontColor('#6654D9')
-        .backgroundColor('#ECE9FB')
-        .borderRadius(14)
-        .padding({ left: 18, right: 18 })
-        .onClick(() => {
-          this.openSettings();
-        })
+      Row({ space: 8 }) {
+        Button('悬浮窗')
+          .height(42)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#2563EB')
+          .backgroundColor('#EFF6FF')
+          .borderRadius(14)
+          .padding({ left: 14, right: 14 })
+          .onClick(async () => {
+            try {
+              const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+              await FloatWindowManager.getInstance().show(context);
+            } catch (err) {
+              this.errorText = `${err}`;
+            }
+          })
+
+        Button('设置')
+          .height(42)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#6654D9')
+          .backgroundColor('#ECE9FB')
+          .borderRadius(14)
+          .padding({ left: 14, right: 14 })
+          .onClick(() => {
+            this.openSettings();
+          })
+      }
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)

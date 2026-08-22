@@ -72,7 +72,7 @@ export class TranslationSession {
   private readonly client: GeminiLiveClient = new GeminiLiveClient();
   private readonly player: PcmAudioPlayer = new PcmAudioPlayer();
   private capture: AudioCaptureSource | undefined = undefined;
-  private listener: SessionListener | undefined = undefined;
+  private readonly listeners: SessionListener[] = [];
   private state: SessionState = SessionState.IDLE;
   private status: string = '准备就绪';
   private running: boolean = false;
@@ -117,10 +117,25 @@ export class TranslationSession {
     this.client.setCallbacks(callbacks);
   }
 
+  addListener(listener: SessionListener): void {
+    if (!this.listeners.includes(listener)) {
+      this.listeners.push(listener);
+    }
+    listener.onState(this.state, this.status);
+    listener.onTranscript(this.inputBuffer.value(), this.outputBuffer.value());
+  }
+
+  removeListener(listener: SessionListener): void {
+    const index: number = this.listeners.indexOf(listener);
+    if (index >= 0) {
+      this.listeners.splice(index, 1);
+    }
+  }
+
   setListener(listener: SessionListener | undefined): void {
-    this.listener = listener;
-    this.publishState();
-    this.publishTranscripts();
+    if (listener) {
+      this.addListener(listener);
+    }
   }
 
   async start(context: common.UIAbilityContext, settings: AppSettings): Promise<void> {
@@ -308,15 +323,23 @@ export class TranslationSession {
     this.state = SessionState.ERROR;
     this.status = message;
     this.publishState();
-    this.listener?.onError(message);
+    for (let index = 0; index < this.listeners.length; index++) {
+      this.listeners[index].onError(message);
+    }
   }
 
   private publishState(): void {
-    this.listener?.onState(this.state, this.status);
+    for (let index = 0; index < this.listeners.length; index++) {
+      this.listeners[index].onState(this.state, this.status);
+    }
   }
 
   private publishTranscripts(): void {
-    this.listener?.onTranscript(this.inputBuffer.value(), this.outputBuffer.value());
+    const inVal = this.inputBuffer.value();
+    const outVal = this.outputBuffer.value();
+    for (let index = 0; index < this.listeners.length; index++) {
+      this.listeners[index].onTranscript(inVal, outVal);
+    }
   }
 
   private errorText(error: Object): string {
