@@ -89,60 +89,24 @@ export class TranscriptBuffer {
     const c: string = this.committed.trim();
     const targetLines: number = Math.max(1, Math.min(5, maxLines));
 
-    const combined: string = smartConcat(c, d);
+    const combined: string = smartConcat(c, d).replace(/[\r\n]+/g, ' ').trim();
     if (combined.length === 0) {
       return '';
     }
 
-    const allLines: string[] = splitIntoLines(combined, 22);
-    if (allLines.length === 0) {
-      return '';
+    // A wide PiP window (880vp) comfortably fits ~28-30 CJK characters per line
+    const charBudget: number = targetLines * 28;
+    if (combined.length <= charBudget) {
+      return combined;
     }
 
-    const startIdx: number = Math.max(0, allLines.length - targetLines);
-    const resultLines: string[] = allLines.slice(startIdx);
-    return resultLines.join('\n');
+    return combined.substring(combined.length - charBudget).trim();
   }
 
   clear(): void {
     this.committed = '';
     this.draft = '';
   }
-}
-
-function splitIntoLines(text: string, maxLineChars: number = 22): string[] {
-  const clean: string = text.replace(/[\r\n]+/g, ' ').trim();
-  if (clean.length === 0) {
-    return [];
-  }
-  const lines: string[] = [];
-  let remaining: string = clean;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLineChars) {
-      lines.push(remaining);
-      break;
-    }
-
-    let breakIdx: number = -1;
-    for (let i = maxLineChars; i >= Math.max(8, maxLineChars - 8); i--) {
-      const ch: string = remaining.charAt(i);
-      if (ch === '。' || ch === '！' || ch === '？' || ch === '，' || ch === '；' || ch === '、' ||
-          ch === '.' || ch === '!' || ch === '?' || ch === ',' || ch === ' ') {
-        breakIdx = i + 1;
-        break;
-      }
-    }
-
-    if (breakIdx === -1) {
-      breakIdx = maxLineChars;
-    }
-
-    lines.push(remaining.substring(0, breakIdx).trim());
-    remaining = remaining.substring(breakIdx).trim();
-  }
-
-  return lines;
 }
 
 export class TranslationSession {
