@@ -95,6 +95,15 @@ export class PiPSubtitleNodeController extends NodeController {
   }
 }
 
+function calculatePiPContentHeight(lines: number, fontSize: number): number {
+  const lineCount: number = Math.max(1, Math.min(4, lines || 2));
+  const font: number = Math.max(10, Math.min(36, fontSize || 18));
+  const singleLineHeight: number = font * 1.45;
+  // Account for 880vp virtual width scaling ratio (~2.5x of physical 350vp screen width)
+  const requiredVirtualHeight: number = Math.round((lineCount * singleLineHeight + 20) * 2.45);
+  return Math.max(120, Math.min(450, requiredVirtualHeight));
+}
+
 export class PiPManager {
   private static instance: PiPManager | undefined = undefined;
   private pipController: PiPWindow.PiPController | undefined = undefined;
@@ -139,8 +148,7 @@ export class PiPManager {
 
       const lines: number = this.currentSettings.subtitleLineCount || 2;
       const fontSize: number = this.currentSettings.captionFontSize || 18;
-      const lineHeight: number = Math.round(fontSize * 1.38);
-      const contentHeight: number = Math.max(90, Math.min(380, lines * lineHeight + 24));
+      const contentHeight: number = calculatePiPContentHeight(lines, fontSize);
 
       const config: PiPWindow.PiPConfiguration = {
         context: context,
@@ -209,6 +217,16 @@ export class PiPManager {
 
   updateSettings(settings: AppSettings): void {
     this.currentSettings = settings;
+    const lines: number = this.currentSettings.subtitleLineCount || 2;
+    const fontSize: number = this.currentSettings.captionFontSize || 18;
+    const newHeight: number = calculatePiPContentHeight(lines, fontSize);
+    if (this.pipController) {
+      try {
+        this.pipController.updateContentSize(880, newHeight);
+      } catch (e) {
+        Log.warn(`updateContentSize failed: ${JSON.stringify(e)}`);
+      }
+    }
     this.refreshSubtitle();
   }
 
