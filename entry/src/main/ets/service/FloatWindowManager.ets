@@ -43,10 +43,7 @@ export class FloatWindowManager {
       const posX: number = Math.round((screenWidth - winWidth) / 2);
       const posY: number = Math.max(120, screenHeight - winHeight - 320);
 
-      let windowStage: window.WindowStage | undefined = AppStorage.get<window.WindowStage>('windowStage');
-      if (!windowStage && (context as Record<string, Object>)['windowStage']) {
-        windowStage = (context as Record<string, Object>)['windowStage'] as window.WindowStage;
-      }
+      const windowStage: window.WindowStage | undefined = AppStorage.get<window.WindowStage>('windowStage');
       if (!windowStage) {
         throw new Error('无法获取 WindowStage，请重启应用后重试');
       }
