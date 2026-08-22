@@ -121,8 +121,9 @@ function buildRollingLines(fullText: string, maxLines: number, charsPerLine: num
       break;
     }
 
+    // Only search at most 2 chars back right at the edge, ensuring lines are 100% packed
     let breakIdx: number = -1;
-    for (let i = charsPerLine; i >= Math.max(8, charsPerLine - 6); i--) {
+    for (let i = charsPerLine; i >= Math.max(charsPerLine - 2, 1); i--) {
       const ch: string = remaining.charAt(i);
       if (ch === '。' || ch === '！' || ch === '？' || ch === '，' || ch === '；' || ch === '、' ||
           ch === '.' || ch === '!' || ch === '?' || ch === ',' || ch === ' ') {

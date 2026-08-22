@@ -159,7 +159,8 @@ export class PiPManager {
 
   private getCharsPerLine(): number {
     const fontSize: number = this.currentSettings.captionFontSize || 18;
-    return Math.max(14, Math.min(28, Math.round(380 / fontSize)));
+    // Usable text width is 880 - 32 = 848vp. Each CJK char is approx 1 fontSize.
+    return Math.max(16, Math.floor(848 / fontSize));
   }
 
   private refreshSubtitle(): void {
