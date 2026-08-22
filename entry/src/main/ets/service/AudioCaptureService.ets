@@ -136,9 +136,11 @@ export class SystemAudioCapture implements AudioCaptureSource {
   }
 
   start(): Promise<void> {
+    Log.info('SystemAudioCapture: calling startPlaybackCapture()...');
     const requestResult: number = playbackCaptureNative.startPlaybackCapture();
+    Log.info(`SystemAudioCapture: startPlaybackCapture returned ${requestResult}`);
     if (requestResult !== 0) {
-      return Promise.reject(new Error(`系统内录启动失败（${requestResult}）`));
+      return Promise.reject(new Error(`系统内录启动失败（错误码：${requestResult}）`));
     }
 
     this.authorized = false;
@@ -149,6 +151,7 @@ export class SystemAudioCapture implements AudioCaptureSource {
         if (state === 2) {
           if (!this.authorized) {
             this.authorized = true;
+            Log.info('SystemAudioCapture: authorization granted, capture running!');
             resolve();
           }
           const source: ArrayBuffer = playbackCaptureNative.readPlaybackPcm(19200);
@@ -159,22 +162,25 @@ export class SystemAudioCapture implements AudioCaptureSource {
         }
 
         if (state === 3 || state === 4) {
+          Log.warn(`SystemAudioCapture: state changed to ${state} (3=NOT_AUTHORIZED, 4=FAILED)`);
           this.clearPollTimer();
           playbackCaptureNative.stopPlaybackCapture();
-          reject(new Error(state === 3 ? '未获得系统内录授权' : '系统内录不可用'));
+          reject(new Error(state === 3 ? '未获得系统内录授权（请在系统弹窗中允许，或检查设备是否支持内录）' : '系统内录启动失败或不可用'));
           return;
         }
 
         if (Date.now() - startedAt > 30000) {
+          Log.error('SystemAudioCapture: authorization timeout (30s)');
           this.clearPollTimer();
           playbackCaptureNative.stopPlaybackCapture();
           reject(new Error('等待系统内录授权超时'));
         }
-      }, 20);
+      }, 50);
     });
   }
 
   async stop(): Promise<void> {
+    Log.info('SystemAudioCapture: stop() called');
     this.clearPollTimer();
     this.authorized = false;
     this.chunker.reset();

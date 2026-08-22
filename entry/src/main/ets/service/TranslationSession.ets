@@ -143,13 +143,11 @@ export class TranslationSession {
     this.publishState();
 
     try {
-      if (settings.audioSource === 'mic') {
-        Log.info('Requesting microphone permission...');
-        const granted: boolean = await this.requestMicrophonePermission(context);
-        Log.info(`Microphone permission result: ${granted}`);
-        if (!granted) {
-          throw new Error('未获得麦克风权限');
-        }
+      Log.info(`Requesting audio/microphone permission for source: ${settings.audioSource}...`);
+      const granted: boolean = await this.requestMicrophonePermission(context);
+      Log.info(`Audio permission result: ${granted}`);
+      if (!granted) {
+        throw new Error('未获得录音/音频采集权限，请在系统弹窗中允许');
       }
 
       this.status = '正在连接 Gemini…';

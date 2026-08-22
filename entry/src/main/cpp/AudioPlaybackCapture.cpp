@@ -7,8 +7,14 @@
 #include <mutex>
 #include <vector>
 
+#include <hilog/log.h>
 #include <ohaudio/native_audiocapturer.h>
 #include <ohaudio/native_audiostreambuilder.h>
+
+#undef LOG_DOMAIN
+#undef LOG_TAG
+#define LOG_DOMAIN 0x0000
+#define LOG_TAG "GeminiLiveNative"
 
 namespace {
 
@@ -105,15 +111,19 @@ void OnPlaybackData(OH_AudioCapturer*, void*, void* audioData, int32_t audioData
 void OnPlaybackCaptureStarted(OH_AudioCapturer* capturer, void*,
     OH_AudioStream_PlaybackCaptureStartState state)
 {
+    OH_LOG_INFO(LOG_APP, "OnPlaybackCaptureStarted callback received: state=%{public}d (0=SUCCESS, 1=FAILED, 2=NOT_AUTHORIZED)",
+        static_cast<int>(state));
     OH_AudioCapturer* toRelease = nullptr;
     {
         std::lock_guard<std::mutex> lock(g_captureMutex);
         // The user can cancel while the system authorization sheet is open.
         // Ignore a late callback if this capturer has already been released.
         if (g_capturer != capturer || g_state.load() != WAITING_AUTHORIZATION) {
+            OH_LOG_WARN(LOG_APP, "OnPlaybackCaptureStarted: capturer mismatch or not waiting");
             return;
         }
         if (state == AUDIOSTREAM_PLAYBACKCAPTURE_START_STATE_SUCCESS) {
+            OH_LOG_INFO(LOG_APP, "OnPlaybackCaptureStarted: successfully started playback capture!");
             g_state.store(RUNNING);
             return;
         }
@@ -124,6 +134,7 @@ void OnPlaybackCaptureStarted(OH_AudioCapturer* capturer, void*,
         g_capturer = nullptr;
     }
     if (toRelease != nullptr) {
+        OH_LOG_WARN(LOG_APP, "OnPlaybackCaptureStarted: releasing capturer due to state=%{public}d", static_cast<int>(state));
         OH_AudioCapturer_Release(toRelease);
     }
 }
@@ -137,9 +148,11 @@ napi_value CreateInt(napi_env env, int32_t value)
 
 napi_value StartPlaybackCapture(napi_env env, napi_callback_info)
 {
+    OH_LOG_INFO(LOG_APP, "StartPlaybackCapture called");
     {
         std::lock_guard<std::mutex> lock(g_captureMutex);
         if (g_capturer != nullptr) {
+            OH_LOG_WARN(LOG_APP, "StartPlaybackCapture: capturer already exists");
             return CreateInt(env, -2);
         }
     }
@@ -150,6 +163,7 @@ napi_value StartPlaybackCapture(napi_env env, napi_callback_info)
     OH_AudioStreamBuilder* builder = nullptr;
     OH_AudioStream_Result result = OH_AudioStreamBuilder_Create(&builder, AUDIOSTREAM_TYPE_CAPTURER);
     if (result != AUDIOSTREAM_SUCCESS || builder == nullptr) {
+        OH_LOG_ERROR(LOG_APP, "OH_AudioStreamBuilder_Create failed: %{public}d", static_cast<int>(result));
         g_state.store(FAILED);
         return CreateInt(env, static_cast<int32_t>(result));
     }
@@ -171,6 +185,7 @@ napi_value StartPlaybackCapture(napi_env env, napi_callback_info)
         result = OH_AudioStreamBuilder_SetPlaybackCaptureMode(builder, CAPTURE_MODE);
     }
     if (result != AUDIOSTREAM_SUCCESS) {
+        OH_LOG_ERROR(LOG_APP, "OH_AudioStreamBuilder configuration failed: %{public}d", static_cast<int>(result));
         OH_AudioStreamBuilder_Destroy(builder);
         g_state.store(FAILED);
         return CreateInt(env, static_cast<int32_t>(result));
@@ -180,6 +195,7 @@ napi_value StartPlaybackCapture(napi_env env, napi_callback_info)
     result = OH_AudioStreamBuilder_GenerateCapturer(builder, &capturer);
     OH_AudioStreamBuilder_Destroy(builder);
     if (result != AUDIOSTREAM_SUCCESS || capturer == nullptr) {
+        OH_LOG_ERROR(LOG_APP, "OH_AudioStreamBuilder_GenerateCapturer failed: %{public}d", static_cast<int>(result));
         g_state.store(FAILED);
         return CreateInt(env, static_cast<int32_t>(result));
     }
@@ -189,8 +205,10 @@ napi_value StartPlaybackCapture(napi_env env, napi_callback_info)
         g_capturer = capturer;
     }
 
+    OH_LOG_INFO(LOG_APP, "Requesting Playback Capture Start...");
     result = OH_AudioCapturer_RequestPlaybackCaptureStart(
         capturer, OnPlaybackCaptureStarted, nullptr);
+    OH_LOG_INFO(LOG_APP, "OH_AudioCapturer_RequestPlaybackCaptureStart returned: %{public}d", static_cast<int>(result));
     if (result != AUDIOSTREAM_SUCCESS) {
         bool shouldRelease = false;
         {
