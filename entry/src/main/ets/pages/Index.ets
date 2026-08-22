@@ -1,6 +1,8 @@
 import { common } from '@kit.AbilityKit';
+import { XComponentController } from '@kit.ArkUI';
 import { AppSettings, languageName } from '../model/AppSettings';
 import { FloatWindowManager } from '../service/FloatWindowManager';
+import { PiPManager } from '../service/PiPManager';
 import { SettingsStore } from '../service/SettingsStore';
 import { Log } from '../util/Logger';
 import {
@@ -27,6 +29,7 @@ struct Index {
   private settings: AppSettings = new AppSettings();
   private readonly pageScroller: Scroller = new Scroller();
   private readonly transcriptScroller: Scroller = new Scroller();
+  private readonly xComponentController: XComponentController = new XComponentController();
   private readonly sessionListener: SessionListener = {
     onState: (state: SessionState, status: string): void => {
       Log.info(`Index onState: state=${state}, status=${status}`);
@@ -51,15 +54,26 @@ struct Index {
 
   aboutToAppear(): void {
     this.session.addListener(this.sessionListener);
+    this.initPiP();
   }
 
   onPageShow(): void {
     this.session.addListener(this.sessionListener);
     this.loadSettings();
+    this.initPiP();
   }
 
   aboutToDisappear(): void {
     this.session.removeListener(this.sessionListener);
+  }
+
+  private async initPiP(): Promise<void> {
+    try {
+      const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      await PiPManager.getInstance().init(context, this.xComponentController);
+    } catch (e) {
+      Log.warn(`initPiP: ${JSON.stringify(e)}`);
+    }
   }
 
   private async loadSettings(): Promise<void> {
@@ -156,11 +170,19 @@ struct Index {
           .onClick(async () => {
             try {
               const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              await FloatWindowManager.getInstance().show(context);
-            } catch (err) {
-              const msg: string = err instanceof Error ? err.message : JSON.stringify(err);
-              Log.error(`Index FloatWindow error: ${msg}`);
-              this.errorText = msg;
+              await PiPManager.getInstance().init(context, this.xComponentController);
+              await PiPManager.getInstance().startPiP();
+            } catch (pipErr) {
+              const msg: string = pipErr instanceof Error ? pipErr.message : JSON.stringify(pipErr);
+              Log.warn(`PiP start failed (${msg}), trying sub-window fallback...`);
+              try {
+                const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+                await FloatWindowManager.getInstance().show(context);
+              } catch (subWinErr) {
+                const errMsg: string = subWinErr instanceof Error ? subWinErr.message : JSON.stringify(subWinErr);
+                Log.error(`Index FloatWindow error: ${errMsg}`);
+                this.errorText = errMsg;
+              }
             }
           })
 
@@ -441,6 +463,12 @@ struct Index {
       .edgeEffect(EdgeEffect.Spring)
 
       this.BottomControls()
+
+      // Hidden surface for Picture-in-Picture window binding
+      XComponent({ id: 'pip_surface_comp', type: XComponentType.SURFACE, controller: this.xComponentController })
+        .width(1)
+        .height(1)
+        .opacity(0.01)
     }
     .width('100%')
     .height('100%')
