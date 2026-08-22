@@ -43,14 +43,15 @@ export class FloatWindowManager {
       const posX: number = Math.round((screenWidth - winWidth) / 2);
       const posY: number = Math.max(120, screenHeight - winHeight - 320);
 
-      const windowStage: window.WindowStage | undefined = AppStorage.get<window.WindowStage>('windowStage');
-      let win: window.Window;
-      if (windowStage) {
-        win = await windowStage.createSubWindow(FLOAT_WINDOW_NAME);
-      } else {
-        const lastWin: window.Window = await window.getLastWindow(context);
-        win = await lastWin.createSubWindow(FLOAT_WINDOW_NAME);
+      let windowStage: window.WindowStage | undefined = AppStorage.get<window.WindowStage>('windowStage');
+      if (!windowStage && (context as Record<string, Object>)['windowStage']) {
+        windowStage = (context as Record<string, Object>)['windowStage'] as window.WindowStage;
       }
+      if (!windowStage) {
+        throw new Error('无法获取 WindowStage，请重启应用后重试');
+      }
+
+      const win: window.Window = await windowStage.createSubWindow(FLOAT_WINDOW_NAME);
 
       this.floatWindow = win;
 
