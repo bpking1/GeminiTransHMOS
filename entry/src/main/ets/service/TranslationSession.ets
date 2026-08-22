@@ -84,13 +84,13 @@ export class TranscriptBuffer {
     return smartConcat(this.committed, this.draft);
   }
 
-  getRecentSubtitle(maxLines: number = 2, charsPerLine: number = 21): string {
+  getRecentSubtitle(maxLines: number = 2, maxWeightPerLine: number = 15): string {
     const d: string = this.draft.trim();
     const c: string = this.committed.trim();
     const targetLines: number = Math.max(1, Math.min(5, maxLines));
 
     const combined: string = smartConcat(c, d);
-    return buildRollingLines(combined, targetLines, charsPerLine);
+    return buildRollingLines(combined, targetLines, maxWeightPerLine);
   }
 
   clear(): void {
@@ -99,45 +99,51 @@ export class TranscriptBuffer {
   }
 }
 
-function buildRollingLines(fullText: string, maxLines: number, charsPerLine: number = 21): string {
+function getCharVisualWeight(c: string): number {
+  if (!c || c.length === 0) {
+    return 0;
+  }
+  const code: number = c.charCodeAt(0);
+  // ASCII / Latin / Numbers / Half-width punctuation
+  if (code <= 0x024F || (code >= 0x2000 && code <= 0x206F)) {
+    return 0.55;
+  }
+  return 1.0;
+}
+
+function buildRollingLines(fullText: string, maxLines: number, maxWeightPerLine: number = 15): string {
   const clean: string = fullText.replace(/[\r\n]+/g, ' ').trim();
   if (clean.length === 0) {
     return '';
   }
 
-  // Only process recent tail of text (last 3 screens of text) for instant calculation
-  const maxScanLength: number = maxLines * charsPerLine * 3;
+  // Process recent tail of text for instant calculation
+  const maxScanLength: number = Math.round(maxLines * maxWeightPerLine * 4);
   let scanText: string = clean;
   if (scanText.length > maxScanLength) {
     scanText = scanText.substring(scanText.length - maxScanLength).trim();
   }
 
   const lines: string[] = [];
-  let remaining: string = scanText;
+  let currentLine: string = '';
+  let currentWeight: number = 0;
 
-  while (remaining.length > 0) {
-    if (remaining.length <= charsPerLine) {
-      lines.push(remaining);
-      break;
+  for (let i = 0; i < scanText.length; i++) {
+    const ch: string = scanText.charAt(i);
+    const w: number = getCharVisualWeight(ch);
+
+    if (currentWeight + w > maxWeightPerLine && currentLine.length > 0) {
+      lines.push(currentLine.trim());
+      currentLine = ch;
+      currentWeight = w;
+    } else {
+      currentLine += ch;
+      currentWeight += w;
     }
+  }
 
-    // Only search at most 2 chars back right at the edge, ensuring lines are 100% packed
-    let breakIdx: number = -1;
-    for (let i = charsPerLine; i >= Math.max(charsPerLine - 2, 1); i--) {
-      const ch: string = remaining.charAt(i);
-      if (ch === '。' || ch === '！' || ch === '？' || ch === '，' || ch === '；' || ch === '、' ||
-          ch === '.' || ch === '!' || ch === '?' || ch === ',' || ch === ' ') {
-        breakIdx = i + 1;
-        break;
-      }
-    }
-
-    if (breakIdx === -1) {
-      breakIdx = charsPerLine;
-    }
-
-    lines.push(remaining.substring(0, breakIdx).trim());
-    remaining = remaining.substring(breakIdx).trim();
+  if (currentLine.trim().length > 0) {
+    lines.push(currentLine.trim());
   }
 
   if (lines.length === 0) {
@@ -346,12 +352,12 @@ export class TranslationSession {
     return this.outputBuffer.value();
   }
 
-  getRecentOutputSubtitle(maxLines: number = 2, charsPerLine: number = 21): string {
-    return this.outputBuffer.getRecentSubtitle(maxLines, charsPerLine);
+  getRecentOutputSubtitle(maxLines: number = 2, maxWeightPerLine: number = 15): string {
+    return this.outputBuffer.getRecentSubtitle(maxLines, maxWeightPerLine);
   }
 
-  getRecentInputSubtitle(maxLines: number = 2, charsPerLine: number = 21): string {
-    return this.inputBuffer.getRecentSubtitle(maxLines, charsPerLine);
+  getRecentInputSubtitle(maxLines: number = 2, maxWeightPerLine: number = 15): string {
+    return this.inputBuffer.getRecentSubtitle(maxLines, maxWeightPerLine);
   }
 
   isActive(): boolean {

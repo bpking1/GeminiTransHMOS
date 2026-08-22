@@ -155,10 +155,11 @@ export class PiPManager {
   private listenerSetup: boolean = false;
   private updateScheduled: boolean = false;
 
-  private getCharsPerLine(): number {
+  private getMaxWeightPerLine(): number {
     const fontSize: number = this.currentSettings.captionFontSize || 18;
-    // Real phone PiP text container width is approx 330vp.
-    return Math.max(12, Math.min(26, Math.floor(330 / fontSize)));
+    // Usable width is ~300vp. Always leave 1 character safety margin (-1)
+    // so it NEVER overflows into an unintended extra line.
+    return Math.max(8, Math.floor(300 / fontSize) - 1);
   }
 
   private refreshSubtitle(): void {
@@ -170,8 +171,8 @@ export class PiPManager {
     setTimeout(() => {
       this.updateScheduled = false;
       const lines: number = this.currentSettings.subtitleLineCount || 2;
-      const charsPerLine: number = this.getCharsPerLine();
-      const text: string = TranslationSession.getInstance().getRecentOutputSubtitle(lines, charsPerLine);
+      const maxWeight: number = this.getMaxWeightPerLine();
+      const text: string = TranslationSession.getInstance().getRecentOutputSubtitle(lines, maxWeight);
       this.nodeController.update(text, this.isLiveState, this.currentSettings);
     }, 16);
   }
