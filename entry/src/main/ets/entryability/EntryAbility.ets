@@ -11,6 +11,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    AppStorage.setOrCreate<window.WindowStage>('windowStage', windowStage);
     windowStage.loadContent('pages/Index', (error) => {
       if (error.code) {
         hilog.error(DOMAIN, 'GeminiLiveTranslate',
@@ -20,9 +21,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onBackground(): void {
-    // A phone user must always have a visible privacy indicator and control
-    // while audio is captured, so translation stops when the app backgrounds.
-    TranslationSession.getInstance().stop();
+    hilog.info(DOMAIN, 'GeminiLiveTranslate', 'Ability onBackground - background translation continuing');
   }
 
   onDestroy(): void {

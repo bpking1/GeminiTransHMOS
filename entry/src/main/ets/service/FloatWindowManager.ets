@@ -43,22 +43,13 @@ export class FloatWindowManager {
       const posX: number = Math.round((screenWidth - winWidth) / 2);
       const posY: number = Math.max(120, screenHeight - winHeight - 320);
 
-      const config: window.Configuration = {
-        name: FLOAT_WINDOW_NAME,
-        windowType: window.WindowType.TYPE_FLOAT,
-        ctx: context
-      };
-
+      const windowStage: window.WindowStage | undefined = AppStorage.get<window.WindowStage>('windowStage');
       let win: window.Window;
-      try {
-        win = await window.createWindow(config);
-      } catch (err) {
-        Log.warn(`Float window TYPE_FLOAT creation failed (${JSON.stringify(err)}), trying sub-window fallback...`);
-        win = await window.createWindow({
-          name: FLOAT_WINDOW_NAME,
-          windowType: window.WindowType.TYPE_DIALOG,
-          ctx: context
-        });
+      if (windowStage) {
+        win = await windowStage.createSubWindow(FLOAT_WINDOW_NAME);
+      } else {
+        const lastWin: window.Window = await window.getLastWindow(context);
+        win = await lastWin.createSubWindow(FLOAT_WINDOW_NAME);
       }
 
       this.floatWindow = win;
