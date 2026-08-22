@@ -22,7 +22,35 @@ export interface SessionListener {
   onError: (message: string) => void;
 }
 
-class TranscriptBuffer {
+function isCjkChar(c: string): boolean {
+  if (!c || c.length === 0) {
+    return false;
+  }
+  const code: number = c.charCodeAt(0);
+  return (code >= 0x4E00 && code <= 0x9FFF) ||
+         (code >= 0x3400 && code <= 0x4DBF) ||
+         (code >= 0x3000 && code <= 0x303F) ||
+         (code >= 0xFF00 && code <= 0xFFEF);
+}
+
+function smartConcat(prev: string, next: string): string {
+  const p: string = prev.trim();
+  const n: string = next.trim();
+  if (p.length === 0) {
+    return n;
+  }
+  if (n.length === 0) {
+    return p;
+  }
+  const lastChar: string = p.charAt(p.length - 1);
+  const firstChar: string = n.charAt(0);
+  if (isCjkChar(lastChar) || isCjkChar(firstChar)) {
+    return `${p}${n}`;
+  }
+  return `${p} ${n}`;
+}
+
+export class TranscriptBuffer {
   private committed: string = '';
   private draft: string = '';
   private readonly maximumLength: number;
@@ -41,7 +69,7 @@ class TranscriptBuffer {
       this.draft = text;
     } else {
       if (this.draft.length > 0) {
-        this.committed = `${this.committed} ${this.draft}`.trim();
+        this.committed = smartConcat(this.committed, this.draft);
       }
       this.draft = text;
     }
@@ -53,7 +81,42 @@ class TranscriptBuffer {
   }
 
   value(): string {
-    return `${this.committed} ${this.draft}`.trim();
+    return smartConcat(this.committed, this.draft);
+  }
+
+  getRecentSubtitle(): string {
+    const d: string = this.draft.trim();
+    const c: string = this.committed.trim();
+    if (c.length === 0) {
+      return d;
+    }
+    const sentences: string[] = [];
+    let cur: string = '';
+    for (let i = 0; i < c.length; i++) {
+      const ch: string = c.charAt(i);
+      cur += ch;
+      if (ch === '。' || ch === '！' || ch === '？' || ch === '\n' || ch === '.' || ch === '!' || ch === '?') {
+        if (cur.trim().length > 0) {
+          sentences.push(cur.trim());
+        }
+        cur = '';
+      }
+    }
+    if (cur.trim().length > 0) {
+      sentences.push(cur.trim());
+    }
+
+    const lastSent: string = sentences.length > 0 ? sentences[sentences.length - 1] : '';
+    if (d.length > 0) {
+      if (lastSent.length > 0 && lastSent !== d) {
+        return `${lastSent}\n${d}`;
+      }
+      return d;
+    }
+    if (sentences.length >= 2) {
+      return `${sentences[sentences.length - 2]}\n${sentences[sentences.length - 1]}`;
+    }
+    return lastSent;
   }
 
   clear(): void {
@@ -257,6 +320,14 @@ export class TranslationSession {
 
   getOutputTranscript(): string {
     return this.outputBuffer.value();
+  }
+
+  getRecentOutputSubtitle(): string {
+    return this.outputBuffer.getRecentSubtitle();
+  }
+
+  getRecentInputSubtitle(): string {
+    return this.inputBuffer.getRecentSubtitle();
   }
 
   isActive(): boolean {

@@ -13,40 +13,15 @@ import { SettingsStore } from './SettingsStore';
 import { SessionListener, SessionState, TranslationSession } from './TranslationSession';
 
 export class SubtitleData {
-  output: string = '';
   displayOutput: string = '';
   fontSize: number = 18;
   isLive: boolean = false;
 
-  constructor(output: string = '', displayOutput: string = '', fontSize: number = 18, isLive: boolean = false) {
-    this.output = output;
+  constructor(displayOutput: string = '', fontSize: number = 18, isLive: boolean = false) {
     this.displayOutput = displayOutput;
     this.fontSize = fontSize;
     this.isLive = isLive;
   }
-}
-
-function extractRecentCaption(text: string, maxLen: number = 85): string {
-  const trimmed: string = text.trim();
-  if (trimmed.length === 0) {
-    return '';
-  }
-  if (trimmed.length <= maxLen) {
-    return trimmed;
-  }
-  const slice: string = trimmed.substring(trimmed.length - maxLen);
-  const p1: number = slice.lastIndexOf('。');
-  const p2: number = slice.lastIndexOf('！');
-  const p3: number = slice.lastIndexOf('？');
-  const p4: number = slice.lastIndexOf('\n');
-  const p5: number = slice.lastIndexOf('. ');
-  const p6: number = slice.lastIndexOf('! ');
-  const p7: number = slice.lastIndexOf('? ');
-  const maxP: number = Math.max(p1, p2, p3, p4, p5, p6, p7);
-  if (maxP >= 0 && maxP < slice.length - 5) {
-    return slice.substring(maxP + 1).trim();
-  }
-  return `…${slice.trim()}`;
 }
 
 @Builder
@@ -58,15 +33,15 @@ function buildPiPSubtitleView(data: SubtitleData) {
         .fontSize(data.fontSize)
         .fontWeight(FontWeight.Bold)
         .fontColor('#FFFFFF')
-        .lineHeight(data.fontSize * 1.35)
+        .lineHeight(data.fontSize * 1.38)
         .textAlign(TextAlign.Center)
         .textShadow({ radius: 6, color: '#FF000000', offsetY: 1 })
         .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textOverflow({ overflow: TextOverflow.None })
     } else {
-      Text(data.isLive ? '正在实时翻译…' : 'Gemini 翻译已就绪')
+      Text(data.isLive ? '正在聆听并实时翻译…' : 'Gemini 实时字幕已就绪')
         .width('100%')
-        .fontSize(Math.max(11, data.fontSize - 3))
+        .fontSize(Math.max(12, data.fontSize - 2))
         .fontColor('#94A3B8')
         .textAlign(TextAlign.Center)
         .textShadow({ radius: 4, color: '#CC000000', offsetY: 1 })
@@ -74,7 +49,7 @@ function buildPiPSubtitleView(data: SubtitleData) {
   }
   .width('100%')
   .height('100%')
-  .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+  .padding({ left: 16, right: 16, top: 8, bottom: 8 })
   .backgroundColor('#000000')
   .justifyContent(FlexAlign.Center)
   .alignItems(HorizontalAlign.Center)
@@ -90,10 +65,9 @@ export class PiPSubtitleNodeController extends NodeController {
     return this.builderNode.getFrameNode();
   }
 
-  update(output: string, isLive: boolean, settings?: AppSettings): void {
+  update(recentSubtitle: string, isLive: boolean, settings?: AppSettings): void {
     const fontSize: number = settings ? settings.captionFontSize : this.data.fontSize;
-    const displayOutput: string = extractRecentCaption(output, 85);
-    this.data = new SubtitleData(output, displayOutput, fontSize, isLive);
+    this.data = new SubtitleData(recentSubtitle.trim(), fontSize, isLive);
     if (this.builderNode) {
       this.builderNode.update(this.data);
     }
@@ -135,7 +109,7 @@ export class PiPManager {
     }
 
     try {
-      Log.info('PiPManager: Initializing Slim Subtitle PiPWindow...');
+      Log.info('PiPManager: Initializing Subtitle PiPWindow...');
       try {
         this.currentSettings = await SettingsStore.load(context);
       } catch (e) {
@@ -147,7 +121,7 @@ export class PiPManager {
         componentController: xComponentController,
         templateType: PiPWindow.PiPTemplateType.VIDEO_PLAY,
         contentWidth: 880,
-        contentHeight: 190,
+        contentHeight: 220,
         customUIController: this.nodeController
       };
 
@@ -178,13 +152,17 @@ export class PiPManager {
       onState: (state: SessionState, status: string): void => {
         this.isLiveState = (state === SessionState.LIVE);
         this.nodeController.update(
-          TranslationSession.getInstance().getOutputTranscript(),
+          TranslationSession.getInstance().getRecentOutputSubtitle(),
           this.isLiveState,
           this.currentSettings
         );
       },
       onTranscript: (input: string, output: string): void => {
-        this.nodeController.update(output, this.isLiveState, this.currentSettings);
+        this.nodeController.update(
+          TranslationSession.getInstance().getRecentOutputSubtitle(),
+          this.isLiveState,
+          this.currentSettings
+        );
       },
       onError: (message: string): void => {}
     };
@@ -194,7 +172,7 @@ export class PiPManager {
   updateSettings(settings: AppSettings): void {
     this.currentSettings = settings;
     this.nodeController.update(
-      TranslationSession.getInstance().getOutputTranscript(),
+      TranslationSession.getInstance().getRecentOutputSubtitle(),
       this.isLiveState,
       this.currentSettings
     );
