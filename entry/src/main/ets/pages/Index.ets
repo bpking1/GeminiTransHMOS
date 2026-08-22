@@ -1,5 +1,4 @@
 import { common } from '@kit.AbilityKit';
-import { XComponentController } from '@kit.ArkUI';
 import { AppSettings, languageName } from '../model/AppSettings';
 import { FloatWindowManager } from '../service/FloatWindowManager';
 import { PiPManager } from '../service/PiPManager';

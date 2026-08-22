@@ -4,8 +4,7 @@ import {
   FrameNode,
   NodeController,
   PiPWindow,
-  UIContext,
-  XComponentController
+  UIContext
 } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Log } from '../util/Logger';
