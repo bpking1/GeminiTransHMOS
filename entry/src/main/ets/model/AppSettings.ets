@@ -40,7 +40,7 @@ export class AppSettings {
   apiKey: string = '';
   apiBase: string = 'https://generativelanguage.googleapis.com';
   targetLanguage: string = 'zh';
-  audioSource: string = 'mic';
+  audioSource: string = 'system';
   playbackEnabled: boolean = false;
   playbackVolume: number = 0.8;
   showOriginal: boolean = true;
@@ -55,7 +55,7 @@ export class AppSettings {
     this.playbackVolume = Math.max(0, Math.min(1, this.playbackVolume));
     this.captionFontSize = Math.max(18, Math.min(34, Math.round(this.captionFontSize)));
     if (this.audioSource !== 'mic' && this.audioSource !== 'system') {
-      this.audioSource = 'mic';
+      this.audioSource = 'system';
     }
     if (this.targetLanguage === 'zh-Hans') {
       this.targetLanguage = 'zh';

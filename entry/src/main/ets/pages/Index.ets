@@ -18,12 +18,13 @@ struct Index {
   @State private inputText: string = '';
   @State private outputText: string = '';
   @State private targetLanguage: string = 'zh';
-  @State private audioSource: string = 'mic';
+  @State private audioSource: string = 'system';
   @State private showOriginal: boolean = true;
   @State private captionFontSize: number = 25;
   @State private errorText: string = '';
   @State private settingsLoaded: boolean = false;
 
+  private autoStarted: boolean = false;
   private readonly session: TranslationSession = TranslationSession.getInstance();
   private settings: AppSettings = new AppSettings();
   private readonly pageScroller: Scroller = new Scroller();
@@ -58,12 +59,42 @@ struct Index {
 
   onPageShow(): void {
     this.session.addListener(this.sessionListener);
-    this.loadSettings();
+    this.loadSettings().then(() => {
+      this.checkAutoStart();
+    });
     this.initPiP();
   }
 
   aboutToDisappear(): void {
     this.session.removeListener(this.sessionListener);
+  }
+
+  private async checkAutoStart(): Promise<void> {
+    if (this.autoStarted || this.session.isActive()) {
+      return;
+    }
+    if (!this.settings.apiKey || this.settings.apiKey.trim().length === 0) {
+      Log.info('Auto-start skipped: API Key is empty');
+      return;
+    }
+    this.autoStarted = true;
+    Log.info('Auto-starting translation and floating window on app launch...');
+    try {
+      const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      await this.session.start(context, this.settings);
+      await this.initPiP();
+      setTimeout(async () => {
+        try {
+          await PiPManager.getInstance().startPiP();
+        } catch (e) {
+          Log.info(`Auto-open PiP info: ${JSON.stringify(e)} (Auto-start on backgrounding is active)`);
+        }
+      }, 400);
+    } catch (error) {
+      const msg: string = error instanceof Error ? error.message : JSON.stringify(error);
+      Log.error(`Auto-start error: ${msg}`);
+      this.errorText = msg;
+    }
   }
 
   private async initPiP(): Promise<void> {
