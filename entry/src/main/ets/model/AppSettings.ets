@@ -45,6 +45,7 @@ export class AppSettings {
   playbackVolume: number = 0.8;
   showOriginal: boolean = true;
   captionFontSize: number = 25;
+  pipBgOpacity: number = 75;
 
   normalize(): void {
     this.apiKey = this.apiKey.trim();
@@ -54,6 +55,7 @@ export class AppSettings {
     }
     this.playbackVolume = Math.max(0, Math.min(1, this.playbackVolume));
     this.captionFontSize = Math.max(18, Math.min(34, Math.round(this.captionFontSize)));
+    this.pipBgOpacity = Math.max(0, Math.min(100, Math.round(this.pipBgOpacity)));
     if (this.audioSource !== 'mic' && this.audioSource !== 'system') {
       this.audioSource = 'system';
     }

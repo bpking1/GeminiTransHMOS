@@ -20,6 +20,7 @@ struct SettingsPage {
   @State private playbackVolume: number = 0.8;
   @State private showOriginal: boolean = true;
   @State private captionFontSize: number = 25;
+  @State private pipBgOpacity: number = 75;
   @State private saveStatus: string = '';
   @State private saving: boolean = false;
 
@@ -39,6 +40,7 @@ struct SettingsPage {
       this.playbackVolume = settings.playbackVolume;
       this.showOriginal = settings.showOriginal;
       this.captionFontSize = settings.captionFontSize;
+      this.pipBgOpacity = settings.pipBgOpacity;
       Log.info(`SettingsPage loaded: apiBase=${this.apiBase}, targetLang=${this.targetLanguage}, hasApiKey=${this.apiKey.length > 0}`);
     } catch (error) {
       Log.error(`SettingsPage load failed: ${JSON.stringify(error)}`);
@@ -62,6 +64,7 @@ struct SettingsPage {
       settings.playbackVolume = this.playbackVolume;
       settings.showOriginal = this.showOriginal;
       settings.captionFontSize = this.captionFontSize;
+      settings.pipBgOpacity = this.pipBgOpacity;
 
       Log.info(`Saving settings: apiBase=${settings.apiBase}, targetLang=${settings.targetLanguage}, source=${settings.audioSource}`);
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -316,6 +319,32 @@ struct SettingsPage {
           .onChange((isOn: boolean) => {
             this.showOriginal = isOn;
           })
+      }
+      .width('100%')
+
+      Divider().color('#ECE9F1')
+
+      this.FieldLabel('悬浮窗背景透明度', '0% 为纯透明字幕无底色，100% 为纯黑不透底')
+      Row() {
+        Slider({
+          value: this.pipBgOpacity,
+          min: 0,
+          max: 100,
+          step: 5,
+          style: SliderStyle.OutSet
+        })
+          .layoutWeight(1)
+          .selectedColor('#725FF0')
+          .trackColor('#E1DDEA')
+          .onChange((value: number) => {
+            this.pipBgOpacity = value;
+          })
+        Text(`${Math.round(this.pipBgOpacity)}%`)
+          .width(44)
+          .fontSize(14)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#725FF0')
+          .textAlign(TextAlign.End)
       }
       .width('100%')
 

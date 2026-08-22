@@ -7,24 +7,34 @@ import {
   UIContext
 } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AppSettings, languageName } from '../model/AppSettings';
+import { AppSettings } from '../model/AppSettings';
 import { Log } from '../util/Logger';
 import { SettingsStore } from './SettingsStore';
 import { SessionListener, SessionState, TranslationSession } from './TranslationSession';
 
 export class SubtitleData {
   output: string = '';
-  input: string = '';
   displayOutput: string = '';
-  displayInput: string = '';
-  targetLanguage: string = 'zh';
-  audioSource: string = 'system';
-  showOriginal: boolean = true;
-  status: string = '已就绪';
+  bgOpacity: number = 75;
   isLive: boolean = false;
 }
 
-function extractRecentCaption(text: string, maxLen: number = 75): string {
+function getBackgroundColor(opacityPercent: number): string {
+  const alphaVal: number = Math.max(0, Math.min(255, Math.round((opacityPercent / 100) * 255)));
+  const alphaHex: string = alphaVal.toString(16).padStart(2, '0').toUpperCase();
+  return `#${alphaHex}0F0D1A`;
+}
+
+function getBorderColor(opacityPercent: number): string {
+  if (opacityPercent <= 10) {
+    return '#00000000';
+  }
+  const alphaVal: number = Math.max(0, Math.min(80, Math.round((opacityPercent / 100) * 55)));
+  const alphaHex: string = alphaVal.toString(16).padStart(2, '0').toUpperCase();
+  return `#${alphaHex}6366F1`;
+}
+
+function extractRecentCaption(text: string, maxLen: number = 85): string {
   const trimmed: string = text.trim();
   if (trimmed.length === 0) {
     return '';
@@ -50,87 +60,32 @@ function extractRecentCaption(text: string, maxLen: number = 75): string {
 @Builder
 function buildPiPSubtitleView(data: SubtitleData) {
   Column() {
-    // 1. Android Live Caption Style Header Bar
-    Row() {
-      // Live indicator + Title
-      Row() {
-        Circle({ width: 7, height: 7 })
-          .fill(data.isLive ? '#10B981' : '#F59E0B')
-          .margin({ right: 6 })
-        Text(data.audioSource === 'system' ? '系统内录' : '麦克风')
-          .fontSize(11)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#7C3AED')
-          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-          .backgroundColor('#2E1B4E')
-          .borderRadius(5)
-          .margin({ right: 6 })
-        Text('实时翻译')
-          .fontSize(11)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#E2E8F0')
-      }
-
-      Blank()
-
-      // Target language badge
-      Text(`→ ${languageName(data.targetLanguage)}`)
-        .fontSize(10)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#A78BFA')
-        .padding({ left: 7, right: 7, top: 2, bottom: 2 })
-        .backgroundColor('#231D36')
-        .borderRadius(10)
-    }
-    .width('100%')
-    .alignItems(VerticalAlign.Center)
-    .margin({ bottom: 6 })
-
-    // 2. High-contrast Real-time Subtitle Body
-    Column() {
-      if (data.displayOutput.length > 0) {
-        Text(data.displayOutput)
-          .width('100%')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
-          .lineHeight(23)
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      } else {
-        Row() {
-          Text(data.isLive ? '正在聆听并实时翻译…' : 'Gemini 翻译悬浮窗就绪')
-            .fontSize(14)
-            .fontColor('#94A3B8')
-        }
+    if (data.displayOutput.length > 0) {
+      Text(data.displayOutput)
         .width('100%')
-        .padding({ top: 4, bottom: 4 })
-      }
-
-      // 3. Optional Original Speech Text
-      if (data.showOriginal && data.displayInput.length > 0) {
-        Text(data.displayInput)
-          .width('100%')
-          .fontSize(12)
-          .fontColor('#93C5FD')
-          .lineHeight(16)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 4 })
-      }
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#FFFFFF')
+        .lineHeight(26)
+        .textAlign(TextAlign.Center)
+        .maxLines(3)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    } else {
+      Text(data.isLive ? '正在实时翻译…' : 'Gemini 翻译已就绪')
+        .width('100%')
+        .fontSize(15)
+        .fontColor('#CBD5E1')
+        .textAlign(TextAlign.Center)
     }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-    .layoutWeight(1)
-    .justifyContent(FlexAlign.Center)
   }
   .width('100%')
   .height('100%')
-  .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-  .backgroundColor('#E60F0D1A')
+  .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+  .backgroundColor(getBackgroundColor(data.bgOpacity))
   .borderRadius(18)
-  .border({ width: 1, color: '#334B3B6E' })
-  .alignItems(HorizontalAlign.Start)
+  .border({ width: data.bgOpacity > 10 ? 1 : 0, color: getBorderColor(data.bgOpacity) })
+  .justifyContent(FlexAlign.Center)
+  .alignItems(HorizontalAlign.Center)
 }
 
 export class PiPSubtitleNodeController extends NodeController {
@@ -143,16 +98,12 @@ export class PiPSubtitleNodeController extends NodeController {
     return this.builderNode.getFrameNode();
   }
 
-  update(input: string, output: string, isLive: boolean, settings?: AppSettings): void {
-    this.data.input = input;
+  update(output: string, isLive: boolean, settings?: AppSettings): void {
     this.data.output = output;
-    this.data.displayOutput = extractRecentCaption(output, 75);
-    this.data.displayInput = extractRecentCaption(input, 60);
+    this.data.displayOutput = extractRecentCaption(output, 85);
     this.data.isLive = isLive;
     if (settings) {
-      this.data.targetLanguage = settings.targetLanguage;
-      this.data.audioSource = settings.audioSource;
-      this.data.showOriginal = settings.showOriginal;
+      this.data.bgOpacity = settings.pipBgOpacity;
     }
     if (this.builderNode) {
       this.builderNode.update(this.data);
@@ -195,7 +146,7 @@ export class PiPManager {
     }
 
     try {
-      Log.info('PiPManager: Initializing Android-style Live Caption PiPWindow...');
+      Log.info('PiPManager: Initializing Pure Subtitle PiPWindow...');
       try {
         this.currentSettings = await SettingsStore.load(context);
       } catch (e) {
@@ -207,7 +158,7 @@ export class PiPManager {
         componentController: xComponentController,
         templateType: PiPWindow.PiPTemplateType.VIDEO_PLAY,
         contentWidth: 840,
-        contentHeight: 300,
+        contentHeight: 280,
         customUIController: this.nodeController
       };
 
@@ -238,14 +189,13 @@ export class PiPManager {
       onState: (state: SessionState, status: string): void => {
         this.isLiveState = (state === SessionState.LIVE);
         this.nodeController.update(
-          TranslationSession.getInstance().getInputTranscript(),
           TranslationSession.getInstance().getOutputTranscript(),
           this.isLiveState,
           this.currentSettings
         );
       },
       onTranscript: (input: string, output: string): void => {
-        this.nodeController.update(input, output, this.isLiveState, this.currentSettings);
+        this.nodeController.update(output, this.isLiveState, this.currentSettings);
       },
       onError: (message: string): void => {}
     };
@@ -255,7 +205,6 @@ export class PiPManager {
   updateSettings(settings: AppSettings): void {
     this.currentSettings = settings;
     this.nodeController.update(
-      TranslationSession.getInstance().getInputTranscript(),
       TranslationSession.getInstance().getOutputTranscript(),
       this.isLiveState,
       this.currentSettings

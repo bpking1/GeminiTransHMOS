@@ -18,6 +18,7 @@ export class SettingsStore {
     settings.playbackVolume = await store.get('playback_volume', 0.8) as number;
     settings.showOriginal = await store.get('show_original', true) as boolean;
     settings.captionFontSize = await store.get('caption_font_size', 25) as number;
+    settings.pipBgOpacity = await store.get('pip_bg_opacity', 75) as number;
     settings.normalize();
     return settings;
   }
@@ -33,6 +34,7 @@ export class SettingsStore {
     await store.put('playback_volume', settings.playbackVolume);
     await store.put('show_original', settings.showOriginal);
     await store.put('caption_font_size', settings.captionFontSize);
+    await store.put('pip_bg_opacity', settings.pipBgOpacity);
     await store.flush();
   }
 }
