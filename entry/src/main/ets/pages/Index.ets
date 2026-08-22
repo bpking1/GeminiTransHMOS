@@ -15,7 +15,7 @@ struct Index {
   @State private statusText: string = '准备就绪';
   @State private inputText: string = '';
   @State private outputText: string = '';
-  @State private targetLanguage: string = 'zh-Hans';
+  @State private targetLanguage: string = 'zh';
   @State private audioSource: string = 'mic';
   @State private showOriginal: boolean = true;
   @State private captionFontSize: number = 25;

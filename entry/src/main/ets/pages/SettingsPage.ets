@@ -13,7 +13,7 @@ import { Log } from '../util/Logger';
 struct SettingsPage {
   @State private apiKey: string = '';
   @State private apiBase: string = 'https://generativelanguage.googleapis.com';
-  @State private targetLanguage: string = 'zh-Hans';
+  @State private targetLanguage: string = 'zh';
   @State private audioSource: string = 'mic';
   @State private playbackEnabled: boolean = false;
   @State private playbackVolume: number = 0.8;

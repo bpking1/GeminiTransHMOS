@@ -140,12 +140,12 @@ export class GeminiLiveClient {
       this.readyResolve = resolve;
       this.readyReject = reject;
       this.connectTimer = setTimeout(() => {
-        Log.error(`Gemini connection timeout (20s). socket.open=${this.open}, ready=${this.ready}`);
+        Log.error(`Gemini connection timeout (30s). socket.open=${this.open}, ready=${this.ready}`);
         const timeoutMsg = this.open
-          ? '连接 Gemini 超时（已连接服务器，但等待模型响应超时，请检查 API Key 是否有效）'
+          ? '连接 Gemini 超时（已连接服务器，但等待模型响应超时，请检查 API Key / 代理 或 语言设置）'
           : '连接 Gemini 超时（无法连接到服务器，模拟器请检查网络连接、代理或配置 API Base URL）';
         this.failConnection(timeoutMsg);
-      }, 20000);
+      }, 30000);
     });
 
     this.callbacks?.onStatus('正在连接 Gemini…');
@@ -297,11 +297,13 @@ export class GeminiLiveClient {
     const payloadJson: string = JSON.stringify(payload);
     Log.info(`Sending setup message: ${payloadJson}`);
 
-    currentSocket.send(payloadJson).then(() => {
-      Log.info('Setup message sent successfully, awaiting setupComplete...');
-    }).catch((error: BusinessError) => {
-      Log.error(`Failed to send setup message: ${error.message ?? JSON.stringify(error)}`);
-      this.failConnection(`模型初始化失败：${error.message}`);
+    currentSocket.send(payloadJson, (error: BusinessError, value: boolean) => {
+      if (error) {
+        Log.error(`Failed to send setup message: ${error.message ?? JSON.stringify(error)}`);
+        this.failConnection(`模型初始化失败：${error.message}`);
+      } else {
+        Log.info(`Setup message sent successfully (result=${value}), awaiting setupComplete...`);
+      }
     });
   }
 

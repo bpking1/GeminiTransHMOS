@@ -16,9 +16,9 @@ export const LANGUAGES: LanguageItem[] = [
   new LanguageItem('it', '意大利语'),
   new LanguageItem('ja', '日语'),
   new LanguageItem('ko', '韩语'),
-  new LanguageItem('zh-Hans', '中文（简体）'),
+  new LanguageItem('zh', '中文'),
   new LanguageItem('vi', '越南语'),
-  new LanguageItem('pt-BR', '葡萄牙语（巴西）'),
+  new LanguageItem('pt', '葡萄牙语'),
   new LanguageItem('ru', '俄语'),
   new LanguageItem('hi', '印地语'),
   new LanguageItem('ar', '阿拉伯语'),
@@ -39,7 +39,7 @@ export function languageName(code: string): string {
 export class AppSettings {
   apiKey: string = '';
   apiBase: string = 'https://generativelanguage.googleapis.com';
-  targetLanguage: string = 'zh-Hans';
+  targetLanguage: string = 'zh';
   audioSource: string = 'mic';
   playbackEnabled: boolean = false;
   playbackVolume: number = 0.8;
@@ -57,12 +57,10 @@ export class AppSettings {
     if (this.audioSource !== 'mic' && this.audioSource !== 'system') {
       this.audioSource = 'mic';
     }
-    // Migrate the short codes used by older desktop/mobile configurations to
-    // the BCP-47 codes listed for the current Live Translation model.
-    if (this.targetLanguage === 'zh') {
-      this.targetLanguage = 'zh-Hans';
-    } else if (this.targetLanguage === 'pt') {
-      this.targetLanguage = 'pt-BR';
+    if (this.targetLanguage === 'zh-Hans') {
+      this.targetLanguage = 'zh';
+    } else if (this.targetLanguage === 'pt-BR') {
+      this.targetLanguage = 'pt';
     }
     let languageSupported: boolean = false;
     for (let index = 0; index < LANGUAGES.length; index++) {
@@ -72,7 +70,7 @@ export class AppSettings {
       }
     }
     if (!languageSupported) {
-      this.targetLanguage = 'zh-Hans';
+      this.targetLanguage = 'zh';
     }
   }
 }

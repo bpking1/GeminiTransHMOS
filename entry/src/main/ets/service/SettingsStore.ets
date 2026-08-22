@@ -12,7 +12,7 @@ export class SettingsStore {
     settings.apiKey = await store.get('api_key', '') as string;
     settings.apiBase = await store.get(
       'api_base', 'https://generativelanguage.googleapis.com') as string;
-    settings.targetLanguage = await store.get('target_language', 'zh-Hans') as string;
+    settings.targetLanguage = await store.get('target_language', 'zh') as string;
     settings.audioSource = await store.get('audio_source', 'mic') as string;
     settings.playbackEnabled = await store.get('playback_enabled', false) as boolean;
     settings.playbackVolume = await store.get('playback_volume', 0.8) as number;
