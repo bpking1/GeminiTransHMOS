@@ -1,6 +1,5 @@
 import { audio } from '@kit.AudioKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import playbackCaptureNative from 'libentry.so';
 import { Log } from '../util/Logger';
 
 export class PlaybackCapturerOptions implements audio.AudioCapturerOptions {
@@ -149,9 +148,6 @@ export class SystemAudioCapture implements AudioCaptureSource {
   private capturer: audio.AudioCapturer | undefined = undefined;
   private readonly chunker: PcmChunker;
   private readonly readDataCallback: (buffer: ArrayBuffer) => void;
-  private fallbackNative: boolean = false;
-  private pollTimer: number = -1;
-  private authorized: boolean = false;
 
   constructor(handler: PcmChunkHandler) {
     this.chunker = new PcmChunker(3200, handler);
@@ -162,14 +158,14 @@ export class SystemAudioCapture implements AudioCaptureSource {
 
   async start(): Promise<void> {
     try {
-      Log.info('SystemAudioCapture: Attempting API 26 AudioPlaybackCapture (MODE_MEDIA | MODE_EXCLUDING_SELF)...');
+      Log.info('SystemAudioCapture: Starting API 26 AudioPlaybackCapture (MODE_MEDIA | MODE_EXCLUDING_SELF)...');
       await this.startApi26PlaybackCapture();
       Log.info('SystemAudioCapture: API 26 AudioPlaybackCapture started successfully!');
     } catch (api26Error) {
       const errMsg: string = api26Error instanceof Error ? api26Error.message : JSON.stringify(api26Error);
       Log.error(`SystemAudioCapture API 26 start failed: ${errMsg}`);
       await this.releaseCapturer();
-      throw new Error(`API 26 纯音频内录启动失败：${errMsg}`);
+      throw new Error(`系统内录启动失败：${errMsg}`);
     }
   }
 
@@ -227,67 +223,12 @@ export class SystemAudioCapture implements AudioCaptureSource {
       Log.warn('SystemAudioCapture: requestPlaybackCaptureStart is not available, falling back to start()');
       await this.capturer.start();
     }
-
-    Log.info('SystemAudioCapture: API 26 PlaybackCapture is running!');
-    this.fallbackNative = false;
-  }
-
-  private startNativeFallback(): Promise<void> {
-    Log.info('SystemAudioCapture: calling startPlaybackCapture() on Native bridge...');
-    const requestResult: number = playbackCaptureNative.startPlaybackCapture();
-    Log.info(`SystemAudioCapture: Native startPlaybackCapture returned ${requestResult}`);
-    if (requestResult !== 0) {
-      return Promise.reject(new Error(`系统内录启动失败（错误码：${requestResult}）`));
-    }
-
-    this.authorized = false;
-    const startedAt: number = Date.now();
-    return new Promise<void>((resolve, reject) => {
-      this.pollTimer = setInterval(() => {
-        const state: number = playbackCaptureNative.getPlaybackCaptureState();
-        if (state === 2) {
-          if (!this.authorized) {
-            this.authorized = true;
-            Log.info('SystemAudioCapture: Native authorization granted, capture running!');
-            resolve();
-          }
-          const source: ArrayBuffer = playbackCaptureNative.readPlaybackPcm(19200);
-          if (source.byteLength > 0) {
-            this.chunker.append(this.downmixAndResample(new Uint8Array(source)));
-          }
-          return;
-        }
-
-        if (state === 3 || state === 4) {
-          Log.warn(`SystemAudioCapture: state changed to ${state} (3=NOT_AUTHORIZED, 4=FAILED)`);
-          this.clearPollTimer();
-          playbackCaptureNative.stopPlaybackCapture();
-          reject(new Error(state === 3
-            ? '系统内录未获授权，请检查系统设置或切换为“麦克风”模式'
-            : '系统内录启动失败或设备不支持'));
-          return;
-        }
-
-        if (Date.now() - startedAt > 30000) {
-          Log.error('SystemAudioCapture: authorization timeout (30s)');
-          this.clearPollTimer();
-          playbackCaptureNative.stopPlaybackCapture();
-          reject(new Error('等待系统内录授权超时'));
-        }
-      }, 50);
-    });
   }
 
   async stop(): Promise<void> {
     Log.info('SystemAudioCapture: stop() called');
     this.chunker.reset();
-    if (this.fallbackNative) {
-      this.clearPollTimer();
-      this.authorized = false;
-      playbackCaptureNative.stopPlaybackCapture();
-    } else {
-      await this.releaseCapturer();
-    }
+    await this.releaseCapturer();
   }
 
   private async releaseCapturer(): Promise<void> {
@@ -310,38 +251,5 @@ export class SystemAudioCapture implements AudioCaptureSource {
     } catch (error) {
       Log.warn(`Releasing audio playback capturer failed: ${JSON.stringify(error)}`);
     }
-  }
-
-  private clearPollTimer(): void {
-    if (this.pollTimer >= 0) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = -1;
-    }
-  }
-
-  private downmixAndResample(source: Uint8Array): Uint8Array {
-    const outputSamples: number = Math.floor(source.length / 12);
-    const output: Uint8Array = new Uint8Array(outputSamples * 2);
-    for (let index = 0; index < outputSamples; index++) {
-      const sourceOffset: number = index * 12;
-      let sum: number = 0;
-      for (let frame = 0; frame < 3; frame++) {
-        const frameOffset: number = sourceOffset + frame * 4;
-        sum += this.readInt16(source, frameOffset);
-        sum += this.readInt16(source, frameOffset + 2);
-      }
-      const mono: number = Math.round(sum / 6);
-      output[index * 2] = mono & 0xFF;
-      output[index * 2 + 1] = (mono >> 8) & 0xFF;
-    }
-    return output;
-  }
-
-  private readInt16(source: Uint8Array, offset: number): number {
-    let value: number = source[offset] | (source[offset + 1] << 8);
-    if ((value & 0x8000) !== 0) {
-      value -= 0x10000;
-    }
-    return value;
   }
 }

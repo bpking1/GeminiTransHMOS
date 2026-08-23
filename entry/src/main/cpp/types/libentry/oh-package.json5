@@ -1,7 +1,0 @@
-{
-  "name": "libentry.so",
-  "types": "./Index.d.ts",
-  "version": "1.0.0",
-  "description": "HarmonyOS 6 playback-capture bridge"
-}
-
