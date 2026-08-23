@@ -21,14 +21,22 @@ export class PlaybackCaptureConfigData implements PlaybackCaptureConfig {
   filterOptions: PlaybackCaptureFilterOptions = new PlaybackCaptureFilterConfig();
 }
 
-export class PlaybackCapturerInfo implements audio.AudioCapturerInfo {
-  source: audio.SourceType = audio.SourceType.SOURCE_TYPE_MIC;
-  capturerFlags: number = 0;
+export class PlaybackCapturerOptions implements audio.AudioCapturerOptions {
+  streamInfo: audio.AudioStreamInfo = {
+    samplingRate: audio.AudioSamplingRate.SAMPLE_RATE_16000,
+    channels: audio.AudioChannel.CHANNEL_1,
+    sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
+    encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
+  };
+  capturerInfo: audio.AudioCapturerInfo = {
+    source: audio.SourceType.SOURCE_TYPE_MIC,
+    capturerFlags: 0
+  };
   playbackCaptureConfig?: PlaybackCaptureConfig;
 }
 
 export interface PlaybackCaptureController {
-  requestPlaybackCaptureStart?: (callback: (err: BusinessError, state: number) => void) => void;
+  requestPlaybackCaptureStart?: (callback: (param1: Object, param2?: Object) => void) => void;
 }
 
 export type PcmChunkHandler = (chunk: Uint8Array) => void;
@@ -176,10 +184,10 @@ export class SystemAudioCapture implements AudioCaptureSource {
       await this.startApi26PlaybackCapture();
       Log.info('SystemAudioCapture: API 26 AudioPlaybackCapture started successfully!');
     } catch (api26Error) {
-      Log.warn(`SystemAudioCapture API 26 start failed: ${JSON.stringify(api26Error)}, falling back to Native PlaybackCapture...`);
+      const errMsg: string = api26Error instanceof Error ? api26Error.message : JSON.stringify(api26Error);
+      Log.error(`SystemAudioCapture API 26 start failed: ${errMsg}`);
       await this.releaseCapturer();
-      this.fallbackNative = true;
-      await this.startNativeFallback();
+      throw new Error(`API 26 纯音频内录启动失败：${errMsg}`);
     }
   }
 
@@ -205,31 +213,36 @@ export class SystemAudioCapture implements AudioCaptureSource {
     captureConfig.playbackCaptureMode = 0x8001;
     captureConfig.filterOptions = filterConfig;
 
-    const capturerInfo: PlaybackCapturerInfo = new PlaybackCapturerInfo();
-    capturerInfo.source = (audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE ?? 3) as audio.SourceType;
-    capturerInfo.capturerFlags = 0;
-    capturerInfo.playbackCaptureConfig = captureConfig;
-
-    const options: audio.AudioCapturerOptions = {
-      streamInfo: streamInfo,
-      capturerInfo: capturerInfo
+    const capturerInfo: audio.AudioCapturerInfo = {
+      source: audio.SourceType.SOURCE_TYPE_MIC,
+      capturerFlags: 0
     };
+
+    const options: PlaybackCapturerOptions = new PlaybackCapturerOptions();
+    options.streamInfo = streamInfo;
+    options.capturerInfo = capturerInfo;
+    options.playbackCaptureConfig = captureConfig;
 
     this.capturer = await audio.createAudioCapturer(options);
     Log.info('SystemAudioCapture: AudioCapturer instance created for API 26 PlaybackCapture');
 
     const controller: PlaybackCaptureController = this.capturer as Object as PlaybackCaptureController;
-    if (controller.requestPlaybackCaptureStart) {
+    if (typeof controller.requestPlaybackCaptureStart === 'function') {
       Log.info('SystemAudioCapture: invoking requestPlaybackCaptureStart()...');
       const state: number = await new Promise<number>((resolve, reject) => {
         try {
           if (controller.requestPlaybackCaptureStart) {
-            controller.requestPlaybackCaptureStart((err: BusinessError, resState: number) => {
-              if (err) {
-                reject(err);
-              } else {
-                resolve(resState);
+            controller.requestPlaybackCaptureStart((param1: Object, param2?: Object) => {
+              Log.info(`requestPlaybackCaptureStart callback: param1=${JSON.stringify(param1)}, param2=${JSON.stringify(param2)}`);
+              let resCode: number = 0;
+              if (typeof param2 === 'number') {
+                resCode = param2;
+              } else if (typeof param1 === 'number') {
+                resCode = param1;
+              } else if (param1 && typeof (param1 as Record<string, Object>)['code'] === 'number') {
+                resCode = (param1 as Record<string, Object>)['code'] as number;
               }
+              resolve(resCode);
             });
           } else {
             resolve(0);
@@ -239,12 +252,14 @@ export class SystemAudioCapture implements AudioCaptureSource {
         }
       });
 
-      Log.info(`SystemAudioCapture: requestPlaybackCaptureStart callback state=${state}`);
+      Log.info(`SystemAudioCapture: requestPlaybackCaptureStart final state=${state}`);
       if (state === 2) {
         throw new Error('系统内录未获用户授权 (STATE_NOT_AUTHORIZED)');
       } else if (state === 1) {
         throw new Error('系统内录启动失败 (STATE_FAILED)');
       }
+    } else {
+      Log.warn('SystemAudioCapture: requestPlaybackCaptureStart is not a function on this device capturer');
     }
 
     this.capturer.on('readData', this.readDataCallback);
