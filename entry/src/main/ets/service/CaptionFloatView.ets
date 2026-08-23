@@ -21,7 +21,7 @@ export class CaptionFloatConfig implements floatView.FloatViewConfiguration {
   }
 }
 
-export class CaptionFloatTemplateOption implements floatView.FloatViewTemplateOptions {
+export class CaptionFloatTemplateProperty implements floatView.TemplateProperty {
   templateType: floatView.FloatViewTemplateType = floatView.FloatViewTemplateType.HORIZONTAL_BAR;
   size: window.Size;
   constructor(size: window.Size) {
@@ -109,9 +109,9 @@ export class CaptionFloatView {
       const targetHeight = limits ? Math.min(limits.maxSize.height, Math.max(limits.minSize.height, 160)) : 160;
 
       const size: FloatWindowSize = new FloatWindowSize(targetWidth, targetHeight);
-      const templateOption: CaptionFloatTemplateOption = new CaptionFloatTemplateOption(size);
+      const templateProperty: CaptionFloatTemplateProperty = new CaptionFloatTemplateProperty(size);
 
-      await this.controller.switchTemplate(templateOption);
+      await this.controller.switchTemplate(templateProperty);
 
       await this.controller.start();
       this.isRunning = true;
