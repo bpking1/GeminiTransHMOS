@@ -127,18 +127,108 @@ export class MicrophoneCapture implements AudioCaptureSource {
 }
 
 export class SystemAudioCapture implements AudioCaptureSource {
+  private capturer: audio.AudioCapturer | undefined = undefined;
+  private readonly chunker: PcmChunker;
+  private readonly readDataCallback: (buffer: ArrayBuffer) => void;
+  private fallbackNative: boolean = false;
   private pollTimer: number = -1;
   private authorized: boolean = false;
-  private readonly chunker: PcmChunker;
 
   constructor(handler: PcmChunkHandler) {
     this.chunker = new PcmChunker(3200, handler);
+    this.readDataCallback = (buffer: ArrayBuffer): void => {
+      this.chunker.append(new Uint8Array(buffer));
+    };
   }
 
-  start(): Promise<void> {
-    Log.info('SystemAudioCapture: calling startPlaybackCapture()...');
+  async start(): Promise<void> {
+    try {
+      Log.info('SystemAudioCapture: Attempting API 26 AudioPlaybackCapture (MODE_MEDIA | MODE_EXCLUDING_SELF)...');
+      await this.startApi26PlaybackCapture();
+      Log.info('SystemAudioCapture: API 26 AudioPlaybackCapture started successfully!');
+    } catch (api26Error) {
+      Log.warn(`SystemAudioCapture API 26 start failed: ${JSON.stringify(api26Error)}, falling back to Native PlaybackCapture...`);
+      await this.releaseCapturer();
+      this.fallbackNative = true;
+      await this.startNativeFallback();
+    }
+  }
+
+  private async startApi26PlaybackCapture(): Promise<void> {
+    const streamInfo: audio.AudioStreamInfo = {
+      samplingRate: audio.AudioSamplingRate.SAMPLE_RATE_16000,
+      channels: audio.AudioChannel.CHANNEL_1,
+      sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
+      encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
+    };
+
+    // MODE_MEDIA (0x0001) | MODE_EXCLUDING_SELF (0x8000) = 0x8001
+    const playbackMode: number = 0x8001;
+
+    const capturerInfoObj: Record<string, Object> = {
+      source: audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE ?? 3,
+      capturerFlags: 0,
+      playbackCaptureConfig: {
+        playbackCaptureMode: playbackMode,
+        filterOptions: {
+          usages: [
+            audio.StreamUsage.STREAM_USAGE_MEDIA ?? 1,
+            audio.StreamUsage.STREAM_USAGE_MUSIC ?? 1,
+            audio.StreamUsage.STREAM_USAGE_MOVIE ?? 1,
+            audio.StreamUsage.STREAM_USAGE_AUDIOBOOK ?? 1,
+            audio.StreamUsage.STREAM_USAGE_UNKNOWN ?? 0
+          ]
+        }
+      }
+    };
+
+    const options: audio.AudioCapturerOptions = {
+      streamInfo: streamInfo,
+      capturerInfo: capturerInfoObj as Object as audio.AudioCapturerInfo
+    };
+
+    this.capturer = await audio.createAudioCapturer(options);
+    Log.info('SystemAudioCapture: AudioCapturer instance created for API 26 PlaybackCapture');
+
+    const capturerObj: Record<string, Object> = this.capturer as Object as Record<string, Object>;
+    if (typeof capturerObj['requestPlaybackCaptureStart'] === 'function') {
+      Log.info('SystemAudioCapture: invoking requestPlaybackCaptureStart()...');
+      const reqFn = capturerObj['requestPlaybackCaptureStart'] as Function;
+
+      const state: number = await new Promise<number>((resolve, reject) => {
+        try {
+          const ret = reqFn.call(this.capturer, (err: BusinessError, resState: number) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(resState);
+            }
+          });
+          if (ret && typeof (ret as Promise<number>).then === 'function') {
+            (ret as Promise<number>).then(resolve).catch(reject);
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+
+      Log.info(`SystemAudioCapture: requestPlaybackCaptureStart callback state=${state}`);
+      if (state === 2) {
+        throw new Error('系统内录未获用户授权 (STATE_NOT_AUTHORIZED)');
+      } else if (state === 1) {
+        throw new Error('系统内录启动失败 (STATE_FAILED)');
+      }
+    }
+
+    this.capturer.on('readData', this.readDataCallback);
+    await this.capturer.start();
+    this.fallbackNative = false;
+  }
+
+  private startNativeFallback(): Promise<void> {
+    Log.info('SystemAudioCapture: calling startPlaybackCapture() on Native bridge...');
     const requestResult: number = playbackCaptureNative.startPlaybackCapture();
-    Log.info(`SystemAudioCapture: startPlaybackCapture returned ${requestResult}`);
+    Log.info(`SystemAudioCapture: Native startPlaybackCapture returned ${requestResult}`);
     if (requestResult !== 0) {
       return Promise.reject(new Error(`系统内录启动失败（错误码：${requestResult}）`));
     }
@@ -151,7 +241,7 @@ export class SystemAudioCapture implements AudioCaptureSource {
         if (state === 2) {
           if (!this.authorized) {
             this.authorized = true;
-            Log.info('SystemAudioCapture: authorization granted, capture running!');
+            Log.info('SystemAudioCapture: Native authorization granted, capture running!');
             resolve();
           }
           const source: ArrayBuffer = playbackCaptureNative.readPlaybackPcm(19200);
@@ -166,7 +256,7 @@ export class SystemAudioCapture implements AudioCaptureSource {
           this.clearPollTimer();
           playbackCaptureNative.stopPlaybackCapture();
           reject(new Error(state === 3
-            ? '系统内录被系统安全策略拦截（鸿蒙底层 PlaybackCapture 接口限制普通应用调用，未弹出授权，请切换为“麦克风”模式使用）'
+            ? '系统内录未获授权，请检查系统设置或切换为“麦克风”模式'
             : '系统内录启动失败或设备不支持'));
           return;
         }
@@ -183,10 +273,36 @@ export class SystemAudioCapture implements AudioCaptureSource {
 
   async stop(): Promise<void> {
     Log.info('SystemAudioCapture: stop() called');
-    this.clearPollTimer();
-    this.authorized = false;
     this.chunker.reset();
-    playbackCaptureNative.stopPlaybackCapture();
+    if (this.fallbackNative) {
+      this.clearPollTimer();
+      this.authorized = false;
+      playbackCaptureNative.stopPlaybackCapture();
+    } else {
+      await this.releaseCapturer();
+    }
+  }
+
+  private async releaseCapturer(): Promise<void> {
+    const current: audio.AudioCapturer | undefined = this.capturer;
+    this.capturer = undefined;
+    if (current === undefined) {
+      return;
+    }
+    try {
+      current.off('readData', this.readDataCallback);
+      if (current.state === audio.AudioState.STATE_RUNNING ||
+          current.state === audio.AudioState.STATE_PAUSED) {
+        await current.stop();
+      }
+    } catch (error) {
+      Log.warn(`Stopping audio playback capturer failed: ${JSON.stringify(error)}`);
+    }
+    try {
+      await current.release();
+    } catch (error) {
+      Log.warn(`Releasing audio playback capturer failed: ${JSON.stringify(error)}`);
+    }
   }
 
   private clearPollTimer(): void {
@@ -197,9 +313,6 @@ export class SystemAudioCapture implements AudioCaptureSource {
   }
 
   private downmixAndResample(source: Uint8Array): Uint8Array {
-    // Native capture is PCM16 LE, 48 kHz, stereo. Average each group of three
-    // stereo frames into one mono sample. This performs the exact 3:1 rate
-    // conversion and adds a small box filter instead of simply dropping frames.
     const outputSamples: number = Math.floor(source.length / 12);
     const output: Uint8Array = new Uint8Array(outputSamples * 2);
     for (let index = 0; index < outputSamples; index++) {
