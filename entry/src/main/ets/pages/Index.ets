@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { AppSettings, languageName } from '../model/AppSettings';
+import { CaptionFloatView } from '../service/CaptionFloatView';
 import { PiPManager } from '../service/PiPManager';
 import { SettingsStore } from '../service/SettingsStore';
 import { Log } from '../util/Logger';
@@ -188,17 +189,37 @@ struct Index {
 
       Blank()
 
-      Button('设置')
-        .height(42)
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#6654D9')
-        .backgroundColor('#ECE9FB')
-        .borderRadius(14)
-        .padding({ left: 16, right: 16 })
-        .onClick(() => {
-          this.openSettings();
-        })
+      Row({ space: 8 }) {
+        Button('FloatView')
+          .height(42)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#059669')
+          .backgroundColor('#ECFDF5')
+          .borderRadius(14)
+          .padding({ left: 14, right: 14 })
+          .onClick(async () => {
+            try {
+              const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+              await CaptionFloatView.getInstance().start(context);
+            } catch (err) {
+              const msg: string = err instanceof Error ? err.message : JSON.stringify(err);
+              this.errorText = `FloatView 启动失败：${msg}`;
+            }
+          })
+
+        Button('设置')
+          .height(42)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#6654D9')
+          .backgroundColor('#ECE9FB')
+          .borderRadius(14)
+          .padding({ left: 16, right: 16 })
+          .onClick(() => {
+            this.openSettings();
+          })
+      }
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)

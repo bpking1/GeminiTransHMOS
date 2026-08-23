@@ -52,6 +52,16 @@
           ],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.FLOAT_VIEW",
+        "reason": "$string:float_view_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ]
   }

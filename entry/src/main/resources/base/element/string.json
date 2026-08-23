@@ -19,6 +19,10 @@
     {
       "name": "float_window_reason",
       "value": "用于在其他应用上方显示实时翻译字幕悬浮窗"
+    },
+    {
+      "name": "float_view_reason",
+      "value": "用于在其他应用上方以系统原生悬浮窗呈现双语字幕"
     }
   ]
 }

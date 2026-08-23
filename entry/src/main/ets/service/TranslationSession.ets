@@ -6,6 +6,7 @@ import {
   MicrophoneCapture,
   SystemAudioCapture
 } from './AudioCaptureService';
+import { CaptionFloatView } from './CaptionFloatView';
 import { GeminiLiveCallbacks, GeminiLiveClient } from './GeminiLiveClient';
 import { PcmAudioPlayer } from './PcmAudioPlayer';
 
@@ -500,6 +501,11 @@ export class TranslationSession {
     for (let index = 0; index < this.listeners.length; index++) {
       this.listeners[index].onTranscript(inVal, outVal);
     }
+    // Synchronize to FloatView
+    CaptionFloatView.getInstance().update(
+      this.getRecentInputSubtitle(2, 20),
+      this.getRecentOutputSubtitle(2, 20)
+    );
   }
 
   private errorText(error: Object): string {
