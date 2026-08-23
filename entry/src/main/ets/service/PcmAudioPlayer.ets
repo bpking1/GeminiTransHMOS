@@ -66,7 +66,7 @@ export class PcmAudioPlayer {
     this.renderer.on('writeData', this.writeDataCallback);
     this.renderer.on('audioInterrupt', (event: audio.InterruptEvent) => {
       console.info(`[PcmAudioPlayer] audioInterrupt: hintType=${event.hintType}, forceType=${event.forceType}`);
-      if (event.hintType === audio.InterruptHint.HINT_RESUME) {
+      if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
         if (this.renderer && (this.renderer.state === audio.AudioState.STATE_PAUSED ||
             this.renderer.state === audio.AudioState.STATE_PREPARED)) {
           this.renderer.start().catch((e: Error) => {
