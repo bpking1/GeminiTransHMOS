@@ -3,24 +3,6 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import playbackCaptureNative from 'libentry.so';
 import { Log } from '../util/Logger';
 
-export interface PlaybackCaptureFilterOptions {
-  usages: number[];
-}
-
-export class PlaybackCaptureFilterConfig implements PlaybackCaptureFilterOptions {
-  usages: number[] = [1, 0];
-}
-
-export interface PlaybackCaptureConfig {
-  playbackCaptureMode: number;
-  filterOptions: PlaybackCaptureFilterOptions;
-}
-
-export class PlaybackCaptureConfigData implements PlaybackCaptureConfig {
-  playbackCaptureMode: number = 0x8001;
-  filterOptions: PlaybackCaptureFilterOptions = new PlaybackCaptureFilterConfig();
-}
-
 export class PlaybackCapturerOptions implements audio.AudioCapturerOptions {
   streamInfo: audio.AudioStreamInfo = {
     samplingRate: audio.AudioSamplingRate.SAMPLE_RATE_16000,
@@ -29,14 +11,14 @@ export class PlaybackCapturerOptions implements audio.AudioCapturerOptions {
     encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
   };
   capturerInfo: audio.AudioCapturerInfo = {
-    source: audio.SourceType.SOURCE_TYPE_MIC,
+    source: (audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE ?? 3) as audio.SourceType,
     capturerFlags: 0
   };
-  playbackCaptureConfig?: PlaybackCaptureConfig;
+  playbackCaptureMode?: number = 0x8001;
 }
 
 export interface PlaybackCaptureController {
-  requestPlaybackCaptureStart?: (callback: (param1: Object, param2?: Object) => void) => void;
+  requestPlaybackCaptureStart?: (callback: (state: number) => void) => void;
 }
 
 export type PcmChunkHandler = (chunk: Uint8Array) => void;
@@ -199,32 +181,23 @@ export class SystemAudioCapture implements AudioCaptureSource {
       encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
     };
 
-    const filterConfig: PlaybackCaptureFilterConfig = new PlaybackCaptureFilterConfig();
-    filterConfig.usages = [
-      (audio.StreamUsage.STREAM_USAGE_MEDIA ?? 1) as number,
-      (audio.StreamUsage.STREAM_USAGE_MUSIC ?? 1) as number,
-      (audio.StreamUsage.STREAM_USAGE_MOVIE ?? 1) as number,
-      (audio.StreamUsage.STREAM_USAGE_AUDIOBOOK ?? 1) as number,
-      (audio.StreamUsage.STREAM_USAGE_UNKNOWN ?? 0) as number
-    ];
+    const capturerInfo: audio.AudioCapturerInfo = {
+      source: (audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE ?? 3) as audio.SourceType,
+      capturerFlags: 0
+    };
 
-    const captureConfig: PlaybackCaptureConfigData = new PlaybackCaptureConfigData();
     // MODE_MEDIA (0x0001) | MODE_EXCLUDING_SELF (0x8000) = 0x8001
-    captureConfig.playbackCaptureMode = 0x8001;
-    captureConfig.filterOptions = filterConfig;
-
-    const capturerInfo: PlaybackCapturerInfo = new PlaybackCapturerInfo();
-    capturerInfo.source = (audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE ?? 3) as audio.SourceType;
-    capturerInfo.capturerFlags = 0;
-    capturerInfo.playbackCaptureConfig = captureConfig;
+    const playbackMode: number = 0x8001;
 
     const options: PlaybackCapturerOptions = new PlaybackCapturerOptions();
     options.streamInfo = streamInfo;
     options.capturerInfo = capturerInfo;
-    options.playbackCaptureConfig = captureConfig;
+    options.playbackCaptureMode = playbackMode;
 
     this.capturer = await audio.createAudioCapturer(options);
     Log.info('SystemAudioCapture: AudioCapturer instance created for API 26 PlaybackCapture');
+
+    this.capturer.on('readData', this.readDataCallback);
 
     const controller: PlaybackCaptureController = this.capturer as Object as PlaybackCaptureController;
     if (typeof controller.requestPlaybackCaptureStart === 'function') {
@@ -232,17 +205,9 @@ export class SystemAudioCapture implements AudioCaptureSource {
       const state: number = await new Promise<number>((resolve, reject) => {
         try {
           if (controller.requestPlaybackCaptureStart) {
-            controller.requestPlaybackCaptureStart((param1: Object, param2?: Object) => {
-              Log.info(`requestPlaybackCaptureStart callback: param1=${JSON.stringify(param1)}, param2=${JSON.stringify(param2)}`);
-              let resCode: number = 0;
-              if (typeof param2 === 'number') {
-                resCode = param2;
-              } else if (typeof param1 === 'number') {
-                resCode = param1;
-              } else if (param1 && typeof (param1 as Record<string, Object>)['code'] === 'number') {
-                resCode = (param1 as Record<string, Object>)['code'] as number;
-              }
-              resolve(resCode);
+            controller.requestPlaybackCaptureStart((stateCode: number) => {
+              Log.info(`SystemAudioCapture: requestPlaybackCaptureStart state=${stateCode}`);
+              resolve(stateCode);
             });
           } else {
             resolve(0);
@@ -259,11 +224,11 @@ export class SystemAudioCapture implements AudioCaptureSource {
         throw new Error('系统内录启动失败 (STATE_FAILED)');
       }
     } else {
-      Log.warn('SystemAudioCapture: requestPlaybackCaptureStart is not a function on this device capturer');
+      Log.warn('SystemAudioCapture: requestPlaybackCaptureStart is not available, falling back to start()');
+      await this.capturer.start();
     }
 
-    this.capturer.on('readData', this.readDataCallback);
-    await this.capturer.start();
+    Log.info('SystemAudioCapture: API 26 PlaybackCapture is running!');
     this.fallbackNative = false;
   }
 
