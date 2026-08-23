@@ -493,6 +493,7 @@ export class TranslationSession {
     for (let index = 0; index < this.listeners.length; index++) {
       this.listeners[index].onState(this.state, this.status);
     }
+    CaptionFloatView.getInstance().update(this.outputBuffer.value(), this.state === SessionState.LIVE);
   }
 
   private publishTranscripts(): void {
@@ -501,11 +502,8 @@ export class TranslationSession {
     for (let index = 0; index < this.listeners.length; index++) {
       this.listeners[index].onTranscript(inVal, outVal);
     }
-    // Synchronize to FloatView
-    CaptionFloatView.getInstance().update(
-      this.getRecentInputSubtitle(2, 20),
-      this.getRecentOutputSubtitle(2, 20)
-    );
+    // Synchronize to FloatView with PiP scroll logic
+    CaptionFloatView.getInstance().update(outVal, this.state === SessionState.LIVE);
   }
 
   private errorText(error: Object): string {

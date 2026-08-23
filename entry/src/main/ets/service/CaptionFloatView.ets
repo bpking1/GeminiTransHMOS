@@ -37,8 +37,9 @@ export class CaptionFloatView {
   private storage: LocalStorage = new LocalStorage();
 
   private constructor() {
-    this.storage.setOrCreate('original', '');
-    this.storage.setOrCreate('translation', '等待语音输入...');
+    this.storage.setOrCreate('translation', '');
+    this.storage.setOrCreate('fontSize', 18);
+    this.storage.setOrCreate('isLive', false);
   }
 
   static getInstance(): CaptionFloatView {
@@ -159,13 +160,10 @@ export class CaptionFloatView {
     }
   }
 
-  update(original: string, translation: string): void {
-    this.storage.setOrCreate('original', original);
+  update(translation: string, isLive: boolean = true, fontSize: number = 18): void {
     this.storage.setOrCreate('translation', translation);
-  }
-
-  updateOriginal(original: string): void {
-    this.storage.setOrCreate('original', original);
+    this.storage.setOrCreate('isLive', isLive);
+    this.storage.setOrCreate('fontSize', fontSize);
   }
 
   updateTranslation(translation: string): void {
