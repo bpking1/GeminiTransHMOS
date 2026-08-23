@@ -1,11 +1,12 @@
 import { floatView, window } from '@kit.ArkUI';
 import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { PiPManager } from './PiPManager';
 import { Log } from '../util/Logger';
 
 export class FloatWindowSize implements window.Size {
   width: number = 900;
-  height: number = 160;
+  height: number = 112;
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
@@ -80,6 +81,13 @@ export class CaptionFloatView {
         }
       }
 
+      // WMS policy: an app cannot run PiP and FloatView concurrently (Error 1031)
+      try {
+        await PiPManager.getInstance().stopPiP();
+      } catch (pipErr) {
+        Log.warn(`[CaptionFloatView] stopPiP note: ${JSON.stringify(pipErr)}`);
+      }
+
       const granted = await this.requestPermission(context);
       if (!granted) {
         throw new Error('未获 ohos.permission.FLOAT_VIEW 权限（需检查 ACL Profile）');
@@ -106,7 +114,7 @@ export class CaptionFloatView {
       await this.controller.setUIContext('pages/CaptionFloat', this.storage);
 
       const targetWidth = limits ? Math.min(limits.maxSize.width, Math.max(limits.minSize.width, 900)) : 900;
-      const targetHeight = limits ? Math.min(limits.maxSize.height, Math.max(limits.minSize.height, 160)) : 160;
+      const targetHeight = limits ? limits.maxSize.height : 112;
 
       const size: FloatWindowSize = new FloatWindowSize(targetWidth, targetHeight);
       const templateProperty: CaptionFloatTemplateProperty = new CaptionFloatTemplateProperty(size);
