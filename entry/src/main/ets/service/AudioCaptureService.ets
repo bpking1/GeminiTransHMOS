@@ -1,6 +1,35 @@
 import { audio } from '@kit.AudioKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import playbackCaptureNative from 'libentry.so';
 import { Log } from '../util/Logger';
+
+export interface PlaybackCaptureFilterOptions {
+  usages: number[];
+}
+
+export class PlaybackCaptureFilterConfig implements PlaybackCaptureFilterOptions {
+  usages: number[] = [1, 0];
+}
+
+export interface PlaybackCaptureConfig {
+  playbackCaptureMode: number;
+  filterOptions: PlaybackCaptureFilterOptions;
+}
+
+export class PlaybackCaptureConfigData implements PlaybackCaptureConfig {
+  playbackCaptureMode: number = 0x8001;
+  filterOptions: PlaybackCaptureFilterOptions = new PlaybackCaptureFilterConfig();
+}
+
+export class PlaybackCapturerInfo implements audio.AudioCapturerInfo {
+  source: audio.SourceType = audio.SourceType.SOURCE_TYPE_MIC;
+  capturerFlags: number = 0;
+  playbackCaptureConfig?: PlaybackCaptureConfig;
+}
+
+export interface PlaybackCaptureController {
+  requestPlaybackCaptureStart?: (callback: (err: BusinessError, state: number) => void) => void;
+}
 
 export type PcmChunkHandler = (chunk: Uint8Array) => void;
 
@@ -162,50 +191,48 @@ export class SystemAudioCapture implements AudioCaptureSource {
       encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
     };
 
-    // MODE_MEDIA (0x0001) | MODE_EXCLUDING_SELF (0x8000) = 0x8001
-    const playbackMode: number = 0x8001;
+    const filterConfig: PlaybackCaptureFilterConfig = new PlaybackCaptureFilterConfig();
+    filterConfig.usages = [
+      (audio.StreamUsage.STREAM_USAGE_MEDIA ?? 1) as number,
+      (audio.StreamUsage.STREAM_USAGE_MUSIC ?? 1) as number,
+      (audio.StreamUsage.STREAM_USAGE_MOVIE ?? 1) as number,
+      (audio.StreamUsage.STREAM_USAGE_AUDIOBOOK ?? 1) as number,
+      (audio.StreamUsage.STREAM_USAGE_UNKNOWN ?? 0) as number
+    ];
 
-    const capturerInfoObj: Record<string, Object> = {
-      source: audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE ?? 3,
-      capturerFlags: 0,
-      playbackCaptureConfig: {
-        playbackCaptureMode: playbackMode,
-        filterOptions: {
-          usages: [
-            audio.StreamUsage.STREAM_USAGE_MEDIA ?? 1,
-            audio.StreamUsage.STREAM_USAGE_MUSIC ?? 1,
-            audio.StreamUsage.STREAM_USAGE_MOVIE ?? 1,
-            audio.StreamUsage.STREAM_USAGE_AUDIOBOOK ?? 1,
-            audio.StreamUsage.STREAM_USAGE_UNKNOWN ?? 0
-          ]
-        }
-      }
-    };
+    const captureConfig: PlaybackCaptureConfigData = new PlaybackCaptureConfigData();
+    // MODE_MEDIA (0x0001) | MODE_EXCLUDING_SELF (0x8000) = 0x8001
+    captureConfig.playbackCaptureMode = 0x8001;
+    captureConfig.filterOptions = filterConfig;
+
+    const capturerInfo: PlaybackCapturerInfo = new PlaybackCapturerInfo();
+    capturerInfo.source = (audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE ?? 3) as audio.SourceType;
+    capturerInfo.capturerFlags = 0;
+    capturerInfo.playbackCaptureConfig = captureConfig;
 
     const options: audio.AudioCapturerOptions = {
       streamInfo: streamInfo,
-      capturerInfo: capturerInfoObj as Object as audio.AudioCapturerInfo
+      capturerInfo: capturerInfo
     };
 
     this.capturer = await audio.createAudioCapturer(options);
     Log.info('SystemAudioCapture: AudioCapturer instance created for API 26 PlaybackCapture');
 
-    const capturerObj: Record<string, Object> = this.capturer as Object as Record<string, Object>;
-    if (typeof capturerObj['requestPlaybackCaptureStart'] === 'function') {
+    const controller: PlaybackCaptureController = this.capturer as Object as PlaybackCaptureController;
+    if (controller.requestPlaybackCaptureStart) {
       Log.info('SystemAudioCapture: invoking requestPlaybackCaptureStart()...');
-      const reqFn = capturerObj['requestPlaybackCaptureStart'] as Function;
-
       const state: number = await new Promise<number>((resolve, reject) => {
         try {
-          const ret = reqFn.call(this.capturer, (err: BusinessError, resState: number) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(resState);
-            }
-          });
-          if (ret && typeof (ret as Promise<number>).then === 'function') {
-            (ret as Promise<number>).then(resolve).catch(reject);
+          if (controller.requestPlaybackCaptureStart) {
+            controller.requestPlaybackCaptureStart((err: BusinessError, resState: number) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(resState);
+              }
+            });
+          } else {
+            resolve(0);
           }
         } catch (e) {
           reject(e);
