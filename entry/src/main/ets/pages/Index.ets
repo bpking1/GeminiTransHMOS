@@ -1,6 +1,5 @@
 import { common } from '@kit.AbilityKit';
 import { AppSettings, languageName } from '../model/AppSettings';
-import { FloatWindowManager } from '../service/FloatWindowManager';
 import { PiPManager } from '../service/PiPManager';
 import { SettingsStore } from '../service/SettingsStore';
 import { Log } from '../util/Logger';
@@ -189,46 +188,17 @@ struct Index {
 
       Blank()
 
-      Row({ space: 8 }) {
-        Button('悬浮窗')
-          .height(42)
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#2563EB')
-          .backgroundColor('#EFF6FF')
-          .borderRadius(14)
-          .padding({ left: 14, right: 14 })
-          .onClick(async () => {
-            try {
-              const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              await PiPManager.getInstance().init(context, this.xComponentController);
-              await PiPManager.getInstance().startPiP();
-            } catch (pipErr) {
-              const msg: string = pipErr instanceof Error ? pipErr.message : JSON.stringify(pipErr);
-              Log.warn(`PiP start failed (${msg}), trying sub-window fallback...`);
-              try {
-                const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-                await FloatWindowManager.getInstance().show(context);
-              } catch (subWinErr) {
-                const errMsg: string = subWinErr instanceof Error ? subWinErr.message : JSON.stringify(subWinErr);
-                Log.error(`Index FloatWindow error: ${errMsg}`);
-                this.errorText = errMsg;
-              }
-            }
-          })
-
-        Button('设置')
-          .height(42)
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#6654D9')
-          .backgroundColor('#ECE9FB')
-          .borderRadius(14)
-          .padding({ left: 14, right: 14 })
-          .onClick(() => {
-            this.openSettings();
-          })
-      }
+      Button('设置')
+        .height(42)
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#6654D9')
+        .backgroundColor('#ECE9FB')
+        .borderRadius(14)
+        .padding({ left: 16, right: 16 })
+        .onClick(() => {
+          this.openSettings();
+        })
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
