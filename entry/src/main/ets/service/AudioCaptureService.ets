@@ -213,10 +213,10 @@ export class SystemAudioCapture implements AudioCaptureSource {
     captureConfig.playbackCaptureMode = 0x8001;
     captureConfig.filterOptions = filterConfig;
 
-    const capturerInfo: audio.AudioCapturerInfo = {
-      source: audio.SourceType.SOURCE_TYPE_MIC,
-      capturerFlags: 0
-    };
+    const capturerInfo: PlaybackCapturerInfo = new PlaybackCapturerInfo();
+    capturerInfo.source = (audio.SourceType.SOURCE_TYPE_PLAYBACK_CAPTURE ?? 3) as audio.SourceType;
+    capturerInfo.capturerFlags = 0;
+    capturerInfo.playbackCaptureConfig = captureConfig;
 
     const options: PlaybackCapturerOptions = new PlaybackCapturerOptions();
     options.streamInfo = streamInfo;
