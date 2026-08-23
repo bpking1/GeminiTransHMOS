@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { floatView } from '@kit.ArkUI';
 import { AppSettings, languageName } from '../model/AppSettings';
 import { CaptionFloatView } from '../service/CaptionFloatView';
 import { PiPManager } from '../service/PiPManager';
@@ -198,14 +199,40 @@ struct Index {
           .backgroundColor('#ECFDF5')
           .borderRadius(14)
           .padding({ left: 14, right: 14 })
-          .onClick(async () => {
-            try {
-              const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              await CaptionFloatView.getInstance().start(context);
-            } catch (err) {
-              const msg: string = err instanceof Error ? err.message : JSON.stringify(err);
-              this.errorText = `FloatView 启动失败：${msg}`;
-            }
+          .onClick(() => {
+            const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+            this.getUIContext().showActionMenu({
+              title: '选择 FloatView 闪控窗形态',
+              buttons: [
+                {
+                  text: '大卡片形态 (ROUNDED_RECTANGLE)',
+                  color: '#059669'
+                },
+                {
+                  text: '双行横条形态 (HORIZONTAL_BAR: 1152px 满宽)',
+                  color: '#2563EB'
+                },
+                {
+                  text: '关闭 FloatView',
+                  color: '#E45858'
+                }
+              ]
+            }).then(async (result) => {
+              try {
+                if (result.index === 0) {
+                  await CaptionFloatView.getInstance().start(context, floatView.FloatViewTemplateType.ROUNDED_RECTANGLE);
+                } else if (result.index === 1) {
+                  await CaptionFloatView.getInstance().start(context, floatView.FloatViewTemplateType.HORIZONTAL_BAR);
+                } else if (result.index === 2) {
+                  await CaptionFloatView.getInstance().stop();
+                }
+              } catch (err) {
+                const msg: string = err instanceof Error ? err.message : JSON.stringify(err);
+                this.errorText = `FloatView 操作失败：${msg}`;
+              }
+            }).catch((e: Error) => {
+              Log.warn(`ActionMenu dismissed: ${JSON.stringify(e)}`);
+            });
           })
 
         Button('设置')

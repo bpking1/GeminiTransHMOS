@@ -5,13 +5,13 @@ struct CaptionFloat {
   @LocalStorageLink('translation') translation: string = '等待语音输入...';
 
   build() {
-    Column({ space: 2 }) {
+    Column({ space: 3 }) {
       if (this.original.length > 0) {
         Text(this.original)
           .fontSize(12)
           .fontWeight(FontWeight.Regular)
-          .fontColor('rgba(255, 255, 255, 0.68)')
-          .maxLines(1)
+          .fontColor('rgba(255, 255, 255, 0.70)')
+          .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
           .textAlign(TextAlign.Start)
@@ -21,7 +21,7 @@ struct CaptionFloat {
         .fontSize(14)
         .fontWeight(FontWeight.Medium)
         .fontColor('#FFFFFF')
-        .maxLines(1)
+        .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
         .textAlign(TextAlign.Start)
@@ -35,7 +35,7 @@ struct CaptionFloat {
       top: 4,
       bottom: 4
     })
-    .backgroundColor('rgba(20, 20, 24, 0.90)')
+    .backgroundColor('rgba(18, 18, 22, 0.92)')
     .borderRadius(14)
     .border({ width: 1, color: 'rgba(255, 255, 255, 0.12)' })
   }

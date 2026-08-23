@@ -66,10 +66,16 @@ export class CaptionFloatView {
     }
   }
 
-  async start(context: common.UIAbilityContext): Promise<boolean> {
-    if (this.isRunning && this.controller) {
-      Log.info('[CaptionFloatView] Already running');
-      return true;
+  async start(
+    context: common.UIAbilityContext,
+    templateType: floatView.FloatViewTemplateType = floatView.FloatViewTemplateType.ROUNDED_RECTANGLE
+  ): Promise<boolean> {
+    if (this.controller) {
+      try {
+        await this.stop();
+      } catch (stopErr) {
+        Log.warn(`[CaptionFloatView] stop before restart: ${JSON.stringify(stopErr)}`);
+      }
     }
 
     try {
@@ -95,11 +101,12 @@ export class CaptionFloatView {
 
       let limits: floatView.FloatViewLimits | undefined = undefined;
       if (typeof floatView.getFloatViewLimits === 'function') {
-        limits = floatView.getFloatViewLimits(floatView.FloatViewTemplateType.HORIZONTAL_BAR);
-        Log.info(`[CaptionFloatView] limits=${JSON.stringify(limits)}`);
+        limits = floatView.getFloatViewLimits(templateType);
+        Log.info(`[CaptionFloatView] Template=${templateType}, limits=${JSON.stringify(limits)}`);
       }
 
       const config: CaptionFloatConfig = new CaptionFloatConfig(context);
+      config.templateType = templateType;
       this.controller = await floatView.create(config);
       Log.info('[CaptionFloatView] controller created');
 
@@ -113,17 +120,26 @@ export class CaptionFloatView {
 
       await this.controller.setUIContext('pages/CaptionFloat', this.storage);
 
-      const targetWidth = limits ? Math.min(limits.maxSize.width, Math.max(limits.minSize.width, 900)) : 900;
-      const targetHeight = limits ? limits.maxSize.height : 112;
+      let targetWidth: number = 1152;
+      let targetHeight: number = 112;
+
+      if (limits) {
+        targetWidth = limits.maxSize.width;
+        targetHeight = limits.maxSize.height;
+      } else if (templateType === floatView.FloatViewTemplateType.ROUNDED_RECTANGLE) {
+        targetWidth = 800;
+        targetHeight = 400;
+      }
 
       const size: FloatWindowSize = new FloatWindowSize(targetWidth, targetHeight);
       const templateProperty: CaptionFloatTemplateProperty = new CaptionFloatTemplateProperty(size);
+      templateProperty.templateType = templateType;
 
       await this.controller.switchTemplate(templateProperty);
 
       await this.controller.start();
       this.isRunning = true;
-      Log.info('[CaptionFloatView] FloatView started successfully!');
+      Log.info(`[CaptionFloatView] FloatView (${templateType}) started successfully! size=${targetWidth}x${targetHeight}`);
       return true;
     } catch (err) {
       const e = err as BusinessError;
