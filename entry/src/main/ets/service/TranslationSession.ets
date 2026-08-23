@@ -53,10 +53,12 @@ function smartConcat(prev: string, next: string): string {
 export class TranscriptBuffer {
   private committed: string = '';
   private draft: string = '';
-  private readonly maximumLength: number;
+  private readonly highWatermark: number;
+  private readonly lowWatermark: number;
 
-  constructor(maximumLength: number) {
-    this.maximumLength = maximumLength;
+  constructor(highWatermark: number = 1000, lowWatermark: number = 500) {
+    this.highWatermark = Math.max(200, highWatermark);
+    this.lowWatermark = Math.max(100, Math.min(this.highWatermark - 100, lowWatermark));
   }
 
   update(fragment: string): string {
@@ -74,10 +76,59 @@ export class TranscriptBuffer {
       this.draft = text;
     }
 
-    if (this.committed.length > this.maximumLength) {
-      this.committed = this.committed.substring(this.committed.length - this.maximumLength);
+    // High-Low Watermark Batch Trimming:
+    // Only perform atomic sentence trimming when committed text crosses high watermark (e.g. 1000 chars)
+    if (this.committed.length > this.highWatermark) {
+      this.trimToLowWatermark();
     }
     return this.value();
+  }
+
+  private trimToLowWatermark(): void {
+    const targetKeepLength: number = this.lowWatermark;
+    if (this.committed.length <= targetKeepLength) {
+      return;
+    }
+
+    const cutStartIdx: number = this.committed.length - targetKeepLength;
+    let bestBoundary: number = cutStartIdx;
+    let found: boolean = false;
+
+    // Search backward up to 80 chars for a clean sentence boundary (。！？.!?\n)
+    for (let i = cutStartIdx; i >= Math.max(0, cutStartIdx - 80); i--) {
+      const ch: string = this.committed.charAt(i);
+      if (ch === '。' || ch === '！' || ch === '？' || ch === '\n' || ch === '.' || ch === '!' || ch === '?') {
+        bestBoundary = i + 1;
+        found = true;
+        break;
+      }
+    }
+
+    // If not found, search forward up to 80 chars
+    if (!found) {
+      for (let i = cutStartIdx; i < Math.min(this.committed.length, cutStartIdx + 80); i++) {
+        const ch: string = this.committed.charAt(i);
+        if (ch === '。' || ch === '！' || ch === '？' || ch === '\n' || ch === '.' || ch === '!' || ch === '?') {
+          bestBoundary = i + 1;
+          found = true;
+          break;
+        }
+      }
+    }
+
+    // Secondary fallback: search for comma / space / semicolon
+    if (!found) {
+      for (let i = cutStartIdx; i >= Math.max(0, cutStartIdx - 50); i--) {
+        const ch: string = this.committed.charAt(i);
+        if (ch === '，' || ch === '；' || ch === '、' || ch === ',' || ch === ';' || ch === ' ') {
+          bestBoundary = i + 1;
+          found = true;
+          break;
+        }
+      }
+    }
+
+    this.committed = this.committed.substring(bestBoundary).trim();
   }
 
   value(): string {
@@ -174,8 +225,8 @@ export class TranslationSession {
   private cleanupTask: Promise<void> | undefined = undefined;
   private playbackEnabled: boolean = false;
   private operationId: number = 0;
-  private readonly inputBuffer: TranscriptBuffer = new TranscriptBuffer(800);
-  private readonly outputBuffer: TranscriptBuffer = new TranscriptBuffer(1200);
+  private readonly inputBuffer: TranscriptBuffer = new TranscriptBuffer(800, 400);
+  private readonly outputBuffer: TranscriptBuffer = new TranscriptBuffer(1000, 500);
 
   private constructor() {
     const callbacks: GeminiLiveCallbacks = {
