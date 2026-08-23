@@ -3,15 +3,42 @@ import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Log } from '../util/Logger';
 
+export class FloatWindowSize implements window.Size {
+  width: number = 900;
+  height: number = 160;
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+  }
+}
+
+export class CaptionFloatConfig implements floatView.FloatViewConfiguration {
+  context: common.UIAbilityContext;
+  templateType: floatView.FloatViewTemplateType = floatView.FloatViewTemplateType.HORIZONTAL_BAR;
+  isConfirmOnClose: boolean = false;
+  constructor(context: common.UIAbilityContext) {
+    this.context = context;
+  }
+}
+
+export class CaptionFloatTemplateOption implements floatView.FloatViewTemplateOptions {
+  templateType: floatView.FloatViewTemplateType = floatView.FloatViewTemplateType.HORIZONTAL_BAR;
+  size: window.Size;
+  constructor(size: window.Size) {
+    this.size = size;
+  }
+}
+
 export class CaptionFloatView {
   private static instance: CaptionFloatView | undefined = undefined;
   private controller?: floatView.FloatViewController;
   private isRunning: boolean = false;
+  private storage: LocalStorage = new LocalStorage();
 
-  private storage: LocalStorage = new LocalStorage({
-    original: '',
-    translation: '等待语音输入...'
-  });
+  private constructor() {
+    this.storage.setOrCreate('original', '');
+    this.storage.setOrCreate('translation', '等待语音输入...');
+  }
 
   static getInstance(): CaptionFloatView {
     if (!CaptionFloatView.instance) {
@@ -64,12 +91,7 @@ export class CaptionFloatView {
         Log.info(`[CaptionFloatView] limits=${JSON.stringify(limits)}`);
       }
 
-      const config: floatView.FloatViewConfiguration = {
-        context: context,
-        templateType: floatView.FloatViewTemplateType.HORIZONTAL_BAR,
-        isConfirmOnClose: false
-      };
-
+      const config: CaptionFloatConfig = new CaptionFloatConfig(context);
       this.controller = await floatView.create(config);
       Log.info('[CaptionFloatView] controller created');
 
@@ -86,15 +108,10 @@ export class CaptionFloatView {
       const targetWidth = limits ? Math.min(limits.maxSize.width, Math.max(limits.minSize.width, 900)) : 900;
       const targetHeight = limits ? Math.min(limits.maxSize.height, Math.max(limits.minSize.height, 160)) : 160;
 
-      const size: window.Size = {
-        width: targetWidth,
-        height: targetHeight
-      };
+      const size: FloatWindowSize = new FloatWindowSize(targetWidth, targetHeight);
+      const templateOption: CaptionFloatTemplateOption = new CaptionFloatTemplateOption(size);
 
-      await this.controller.switchTemplate({
-        templateType: floatView.FloatViewTemplateType.HORIZONTAL_BAR,
-        size: size
-      });
+      await this.controller.switchTemplate(templateOption);
 
       await this.controller.start();
       this.isRunning = true;
