@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { floatView } from '@kit.ArkUI';
+import { floatView, promptAction } from '@kit.ArkUI';
 import { AppSettings, languageName } from '../model/AppSettings';
 import { CaptionFloatView } from '../service/CaptionFloatView';
 import { PiPManager } from '../service/PiPManager';
@@ -201,7 +201,7 @@ struct Index {
           .padding({ left: 14, right: 14 })
           .onClick(() => {
             const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-            this.getUIContext().showActionMenu({
+            const options: promptAction.ActionMenuOptions = {
               title: '选择 FloatView 闪控窗形态',
               buttons: [
                 {
@@ -217,7 +217,8 @@ struct Index {
                   color: '#E45858'
                 }
               ]
-            }).then(async (result) => {
+            };
+            promptAction.showActionMenu(options).then(async (result: promptAction.ActionMenuSuccessResponse) => {
               try {
                 if (result.index === 0) {
                   await CaptionFloatView.getInstance().start(context, floatView.FloatViewTemplateType.ROUNDED_RECTANGLE);
