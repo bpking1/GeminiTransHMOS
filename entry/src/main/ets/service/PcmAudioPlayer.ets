@@ -34,7 +34,15 @@ export class PcmAudioPlayer {
 
   async start(volume: number): Promise<void> {
     if (this.renderer !== undefined) {
-      await this.renderer.setVolume(Math.max(0, Math.min(1, volume)));
+      try {
+        await this.renderer.setVolume(Math.max(0, Math.min(1, volume)));
+        if (this.renderer.state === audio.AudioState.STATE_PAUSED ||
+            this.renderer.state === audio.AudioState.STATE_PREPARED) {
+          await this.renderer.start();
+        }
+      } catch (e) {
+        console.warn(`PcmAudioPlayer setVolume/start error: ${JSON.stringify(e)}`);
+      }
       return;
     }
 
@@ -44,8 +52,9 @@ export class PcmAudioPlayer {
       sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
       encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
     };
+    // STREAM_USAGE_VOICE_ASSISTANT / STREAM_USAGE_MEDIA supports concurrent playback alongside video
     const rendererInfo: audio.AudioRendererInfo = {
-      usage: audio.StreamUsage.STREAM_USAGE_VOICE_MESSAGE,
+      usage: audio.StreamUsage.STREAM_USAGE_VOICE_ASSISTANT ?? audio.StreamUsage.STREAM_USAGE_MEDIA,
       rendererFlags: 0
     };
     const options: audio.AudioRendererOptions = {
@@ -55,14 +64,36 @@ export class PcmAudioPlayer {
 
     this.renderer = await audio.createAudioRenderer(options);
     this.renderer.on('writeData', this.writeDataCallback);
+    this.renderer.on('audioInterrupt', (event: audio.InterruptEvent) => {
+      console.info(`[PcmAudioPlayer] audioInterrupt: hintType=${event.hintType}, forceType=${event.forceType}`);
+      if (event.hintType === audio.InterruptHint.HINT_RESUME) {
+        if (this.renderer && (this.renderer.state === audio.AudioState.STATE_PAUSED ||
+            this.renderer.state === audio.AudioState.STATE_PREPARED)) {
+          this.renderer.start().catch((e: Error) => {
+            console.warn(`[PcmAudioPlayer] resume error: ${JSON.stringify(e)}`);
+          });
+        }
+      }
+    });
+
     await this.renderer.setVolume(Math.max(0, Math.min(1, volume)));
     await this.renderer.start();
+    console.info('[PcmAudioPlayer] AudioRenderer started successfully with VOICE_ASSISTANT concurrency');
   }
 
   enqueue(data: Uint8Array): void {
     if (data.length === 0 || this.renderer === undefined) {
       return;
     }
+
+    // Auto-resume if renderer was paused by audio focus transition
+    if (this.renderer.state === audio.AudioState.STATE_PAUSED ||
+        this.renderer.state === audio.AudioState.STATE_PREPARED) {
+      this.renderer.start().catch((e: Error) => {
+        console.warn(`[PcmAudioPlayer] auto-resume on enqueue error: ${JSON.stringify(e)}`);
+      });
+    }
+
     this.queue.push(data);
     this.availableBytes += data.length;
 

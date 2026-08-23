@@ -268,6 +268,25 @@ export class TranslationSession {
         return;
       }
 
+      const sendAudio = (chunk: Uint8Array): void => {
+        this.client.sendAudio(chunk);
+      };
+      this.capture = settings.audioSource === 'system'
+        ? new SystemAudioCapture(sendAudio)
+        : new MicrophoneCapture(sendAudio);
+
+      this.status = settings.audioSource === 'system'
+        ? '正在启动系统内录…'
+        : '正在启动麦克风…';
+      this.publishState();
+      Log.info(`Starting audio capture: ${settings.audioSource}...`);
+      await this.capture.start();
+      if (currentOperation !== this.operationId) {
+        Log.warn('Session operation changed during capture start, cleaning up...');
+        await this.cleanup();
+        return;
+      }
+
       this.playbackEnabled = settings.playbackEnabled;
       if (this.playbackEnabled) {
         Log.info(`Starting audio player (volume: ${settings.playbackVolume})...`);
@@ -277,25 +296,6 @@ export class TranslationSession {
           await this.cleanup();
           return;
         }
-      }
-
-      const sendAudio = (chunk: Uint8Array): void => {
-        this.client.sendAudio(chunk);
-      };
-      this.capture = settings.audioSource === 'system'
-        ? new SystemAudioCapture(sendAudio)
-        : new MicrophoneCapture(sendAudio);
-
-      this.status = settings.audioSource === 'system'
-        ? '请在系统弹窗中允许音频内录…'
-        : '正在启动麦克风…';
-      this.publishState();
-      Log.info(`Starting audio capture: ${settings.audioSource}...`);
-      await this.capture.start();
-      if (currentOperation !== this.operationId) {
-        Log.warn('Session operation changed during capture start, cleaning up...');
-        await this.cleanup();
-        return;
       }
 
       this.starting = false;
