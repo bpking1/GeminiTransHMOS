@@ -121,14 +121,24 @@ export class CaptionFloatView {
       await this.controller.setUIContext('pages/CaptionFloat', this.storage);
 
       let targetWidth: number = 1152;
-      let targetHeight: number = 112;
+      let targetHeight: number = 216;
 
-      if (limits) {
+      if (templateType === floatView.FloatViewTemplateType.ROUNDED_RECTANGLE) {
+        if (limits) {
+          const maxWidth = limits.maxSize.width;
+          const minHeight = limits.minSize.height;
+          const maxRatio = (limits.ratioLimits && limits.ratioLimits.length > 0) ? limits.ratioLimits[0].maxRatio : 5.333333333333333;
+          // Calculate the flattest/lowest height allowed by maxRatio (e.g. 1152 / 5.333 = 216)
+          const heightByRatio = Math.max(minHeight, Math.round(maxWidth / maxRatio));
+          targetWidth = maxWidth;
+          targetHeight = heightByRatio; // Exactly 1152 x 216 px
+        } else {
+          targetWidth = 1152;
+          targetHeight = 216;
+        }
+      } else if (limits) {
         targetWidth = limits.maxSize.width;
         targetHeight = limits.maxSize.height;
-      } else if (templateType === floatView.FloatViewTemplateType.ROUNDED_RECTANGLE) {
-        targetWidth = 800;
-        targetHeight = 400;
       }
 
       const size: FloatWindowSize = new FloatWindowSize(targetWidth, targetHeight);
