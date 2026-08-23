@@ -115,7 +115,7 @@ export class CaptionFloatView {
       });
 
       this.controller.onRectChange((info: floatView.FloatViewRectChangeInfo) => {
-        Log.info(`[CaptionFloatView] rect=${JSON.stringify(info)}`);
+        Log.info(`[FloatView] onRectChange: reason=${info.reason}, rect=${JSON.stringify(info.windowRect)}, scale=${info.windowScale}`);
       });
 
       await this.controller.setUIContext('pages/CaptionFloat', this.storage);

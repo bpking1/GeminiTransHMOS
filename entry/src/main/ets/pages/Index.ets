@@ -55,7 +55,6 @@ struct Index {
 
   aboutToAppear(): void {
     this.session.addListener(this.sessionListener);
-    this.initPiP();
   }
 
   onPageShow(): void {
@@ -63,7 +62,6 @@ struct Index {
     this.loadSettings().then(() => {
       this.checkAutoStart();
     });
-    this.initPiP();
   }
 
   aboutToDisappear(): void {
@@ -79,31 +77,21 @@ struct Index {
       return;
     }
     this.autoStarted = true;
-    Log.info('Auto-starting translation and floating window on app launch...');
+    Log.info('Auto-starting translation and FloatView on app launch...');
     try {
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await this.session.start(context, this.settings);
-      await this.initPiP();
       setTimeout(async () => {
         try {
-          await PiPManager.getInstance().startPiP();
+          await CaptionFloatView.getInstance().start(context, floatView.FloatViewTemplateType.ROUNDED_RECTANGLE);
         } catch (e) {
-          Log.info(`Auto-open PiP info: ${JSON.stringify(e)} (Auto-start on backgrounding is active)`);
+          Log.info(`Auto-open FloatView info: ${JSON.stringify(e)}`);
         }
-      }, 400);
+      }, 300);
     } catch (error) {
       const msg: string = error instanceof Error ? error.message : JSON.stringify(error);
       Log.error(`Auto-start error: ${msg}`);
       this.errorText = msg;
-    }
-  }
-
-  private async initPiP(): Promise<void> {
-    try {
-      const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      await PiPManager.getInstance().init(context, this.xComponentController);
-    } catch (e) {
-      Log.warn(`initPiP: ${JSON.stringify(e)}`);
     }
   }
 
@@ -117,7 +105,6 @@ struct Index {
       this.showOriginal = this.settings.showOriginal;
       this.captionFontSize = this.settings.captionFontSize;
       this.settingsLoaded = true;
-      PiPManager.getInstance().updateSettings(this.settings);
       Log.info(`Settings loaded: targetLang=${this.targetLanguage}, source=${this.audioSource}, hasApiKey=${this.settings.apiKey.length > 0}`);
     } catch (error) {
       Log.error(`Failed to load settings: ${JSON.stringify(error)}`);
@@ -127,15 +114,23 @@ struct Index {
 
   private async toggleSession(): Promise<void> {
     Log.info(`User clicked toggleSession. isActive=${this.session.isActive()}`);
+    const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     if (this.session.isActive()) {
       await this.session.stop();
+      await CaptionFloatView.getInstance().stop();
       return;
     }
     if (!this.settingsLoaded) {
       await this.loadSettings();
     }
-    const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     await this.session.start(context, this.settings);
+    setTimeout(async () => {
+      try {
+        await CaptionFloatView.getInstance().start(context, floatView.FloatViewTemplateType.ROUNDED_RECTANGLE);
+      } catch (e) {
+        Log.info(`FloatView start note: ${JSON.stringify(e)}`);
+      }
+    }, 300);
   }
 
   private async openSettings(): Promise<void> {
