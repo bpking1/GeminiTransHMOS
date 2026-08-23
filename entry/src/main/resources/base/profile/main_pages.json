@@ -1,8 +1,7 @@
 {
   "src": [
     "pages/Index",
-    "pages/SettingsPage",
-    "pages/FloatingWindowPage"
+    "pages/SettingsPage"
   ]
 }
 
