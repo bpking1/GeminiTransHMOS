@@ -6,6 +6,34 @@ struct CaptionFloat {
   @LocalStorageLink('translation') translation: string = '';
   @LocalStorageLink('fontSize') fontSize: number = 18;
   @LocalStorageLink('isLive') isLive: boolean = false;
+  @State isBgVisible: boolean = false;
+  private hideTimer: number = -1;
+
+  private onCardClicked(): void {
+    if (this.isBgVisible) {
+      this.isBgVisible = false;
+      if (this.hideTimer !== -1) {
+        clearTimeout(this.hideTimer);
+        this.hideTimer = -1;
+      }
+    } else {
+      this.isBgVisible = true;
+      if (this.hideTimer !== -1) {
+        clearTimeout(this.hideTimer);
+      }
+      this.hideTimer = setTimeout(() => {
+        this.isBgVisible = false;
+        this.hideTimer = -1;
+      }, 3000);
+    }
+  }
+
+  aboutToDisappear(): void {
+    if (this.hideTimer !== -1) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = -1;
+    }
+  }
 
   build() {
     Column() {
@@ -16,10 +44,10 @@ struct CaptionFloat {
               .width('100%')
               .fontSize(this.fontSize)
               .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
+              .fontColor('#000000')
               .lineHeight(this.fontSize * 1.38)
               .textAlign(TextAlign.Start)
-              .textShadow({ radius: 6, color: '#FF000000', offsetY: 1 })
+              .textShadow({ radius: 4, color: '#CCFFFFFF', offsetY: 1 })
               .wordBreak(WordBreak.BREAK_ALL)
           }
           .width('100%')
@@ -36,16 +64,25 @@ struct CaptionFloat {
         Text(this.isLive ? '正在聆听并实时翻译…' : 'Gemini 实时字幕已就绪')
           .width('100%')
           .fontSize(Math.max(12, this.fontSize - 2))
-          .fontColor('#94A3B8')
+          .fontColor('#4B5563')
           .textAlign(TextAlign.Start)
-          .textShadow({ radius: 4, color: '#CC000000', offsetY: 1 })
+          .textShadow({ radius: 4, color: '#CCFFFFFF', offsetY: 1 })
       }
     }
     .width('100%')
     .height('100%')
     .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-    .backgroundColor('#33000000')
+    .backgroundColor(this.isBgVisible ? 'rgba(255, 255, 255, 0.85)' : '#00000000')
+    .borderRadius(14)
+    .border({
+      width: this.isBgVisible ? 1 : 0,
+      color: 'rgba(0, 0, 0, 0.12)'
+    })
+    .animation({ duration: 250 })
     .justifyContent(FlexAlign.End)
     .alignItems(HorizontalAlign.Start)
+    .onClick(() => {
+      this.onCardClicked();
+    })
   }
 }
