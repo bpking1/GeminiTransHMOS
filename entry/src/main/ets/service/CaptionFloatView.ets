@@ -164,10 +164,15 @@ export class CaptionFloatView {
     this.storage.setOrCreate('translation', translation);
     this.storage.setOrCreate('isLive', isLive);
     this.storage.setOrCreate('fontSize', fontSize);
+
+    AppStorage.setOrCreate('caption_translation', translation);
+    AppStorage.setOrCreate('caption_is_live', isLive);
+    AppStorage.setOrCreate('caption_font_size', fontSize);
   }
 
   updateTranslation(translation: string): void {
     this.storage.setOrCreate('translation', translation);
+    AppStorage.setOrCreate('caption_translation', translation);
   }
 
   async stop(): Promise<void> {
