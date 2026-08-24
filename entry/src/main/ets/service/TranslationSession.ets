@@ -1,4 +1,4 @@
-import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
+import { abilityAccessCtrl, common, PermissionRequestResult, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { AppSettings } from '../model/AppSettings';
 import { Log } from '../util/Logger';
@@ -473,15 +473,26 @@ export class TranslationSession {
       return;
     }
     this.taskContext = context;
-    const config: backgroundTaskManager.ContinuousTaskConfig = {
-      taskType: this.playbackEnabled
-        ? backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK
-        : backgroundTaskManager.BackgroundMode.AUDIO_RECORDING
+    const mode: backgroundTaskManager.BackgroundMode = this.playbackEnabled
+      ? backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK
+      : backgroundTaskManager.BackgroundMode.AUDIO_RECORDING;
+    const wantAgentInfo: wantAgent.WantAgentInfo = {
+      wants: [
+        {
+          bundleName: context.abilityInfo.bundleName,
+          abilityName: 'EntryAbility'
+        }
+      ],
+      operationType: wantAgent.OperationType.START_ABILITY,
+      requestCode: 0,
+      wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     };
-    backgroundTaskManager.startContinuousTask(context, config).then((): void => {
-      Log.info(`Continuous task started (mode=${config.taskType})`);
+    wantAgent.getWantAgent(wantAgentInfo).then((agent: wantAgent.WantAgent): Promise<void> => {
+      return backgroundTaskManager.startBackgroundRunning(context, mode, agent);
+    }).then((): void => {
+      Log.info(`Continuous task started (mode=${mode})`);
     }).catch((error: Object): void => {
-      Log.warn(`startContinuousTask failed: ${JSON.stringify(error)}`);
+      Log.warn(`startBackgroundRunning failed: ${JSON.stringify(error)}`);
     });
   }
 
@@ -491,10 +502,10 @@ export class TranslationSession {
     if (context === undefined) {
       return;
     }
-    backgroundTaskManager.stopContinuousTask(context).then((): void => {
+    backgroundTaskManager.stopBackgroundRunning(context).then((): void => {
       Log.info('Continuous task stopped');
     }).catch((error: Object): void => {
-      Log.warn(`stopContinuousTask failed: ${JSON.stringify(error)}`);
+      Log.warn(`stopBackgroundRunning failed: ${JSON.stringify(error)}`);
     });
   }
 
