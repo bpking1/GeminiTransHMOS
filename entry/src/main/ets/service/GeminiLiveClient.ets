@@ -8,12 +8,18 @@ class AudioTranscriptionConfig {
 }
 
 class SlidingWindowConfig {
-  targetTokens: string = '0';
 }
 
 class ContextWindowCompressionConfig {
-  triggerTokens: string = '0';
   slidingWindow: SlidingWindowConfig = new SlidingWindowConfig();
+}
+
+class SessionResumptionConfig {
+  handle?: string;
+
+  constructor(handle?: string) {
+    this.handle = handle;
+  }
 }
 
 interface TranslationConfig {
@@ -32,6 +38,7 @@ interface SetupConfig {
   inputAudioTranscription: AudioTranscriptionConfig;
   outputAudioTranscription: AudioTranscriptionConfig;
   contextWindowCompression: ContextWindowCompressionConfig;
+  sessionResumption: SessionResumptionConfig;
 }
 
 interface SetupPayload {
@@ -88,10 +95,22 @@ interface ApiErrorMessage {
   message?: string;
 }
 
+interface GoAwayMessage {
+  timeLeft?: string;
+}
+
+interface SessionResumptionUpdateMessage {
+  resumable?: boolean;
+  newHandle?: string;
+  token?: string;
+}
+
 interface GeminiServerMessage {
   setupComplete?: Object;
   serverContent?: ServerContentMessage;
   error?: ApiErrorMessage;
+  goAway?: GoAwayMessage;
+  sessionResumptionUpdate?: SessionResumptionUpdateMessage;
 }
 
 export interface GeminiLiveCallbacks {
@@ -112,6 +131,8 @@ export class GeminiLiveClient {
   private ready: boolean = false;
   private intentionalClose: boolean = false;
   private disconnectNotified: boolean = false;
+  private reconnecting: boolean = false;
+  private sessionHandle: string | undefined = undefined;
   private connectTimer: number = -1;
   private readyResolve: (() => void) | undefined = undefined;
   private readyReject: ((reason: Error) => void) | undefined = undefined;
@@ -125,6 +146,8 @@ export class GeminiLiveClient {
     this.settings = settings;
     this.intentionalClose = false;
     this.disconnectNotified = false;
+    this.reconnecting = false;
+    this.sessionHandle = undefined;
     this.open = false;
     this.ready = false;
 
@@ -178,6 +201,8 @@ export class GeminiLiveClient {
 
   async stop(): Promise<void> {
     this.intentionalClose = true;
+    this.reconnecting = false;
+    this.sessionHandle = undefined;
     this.clearConnectTimer();
 
     if (!this.ready && this.readyReject !== undefined) {
@@ -252,7 +277,7 @@ export class GeminiLiveClient {
           return;
         }
       }
-      Log.info(`WebSocket message received (${rawText.length} chars): ${rawText.substring(0, 150)}`);
+      Log.info(`WebSocket message received (${rawText.length} chars)`);
       if (rawText.length > 0) {
         this.handleMessage(rawText);
       }
@@ -307,11 +332,12 @@ export class GeminiLiveClient {
       generationConfig: generationConfig,
       inputAudioTranscription: new AudioTranscriptionConfig(),
       outputAudioTranscription: new AudioTranscriptionConfig(),
-      contextWindowCompression: new ContextWindowCompressionConfig()
+      contextWindowCompression: new ContextWindowCompressionConfig(),
+      sessionResumption: new SessionResumptionConfig(this.sessionHandle)
     };
     const payload: SetupPayload = { setup: setupConfig };
     const payloadJson: string = JSON.stringify(payload);
-    Log.info(`Sending setup message: ${payloadJson}`);
+    Log.info(`Sending setup message. resuming=${this.sessionHandle !== undefined}`);
 
     currentSocket.send(payloadJson, (error: BusinessError, value: boolean) => {
       if (error) {
@@ -333,9 +359,30 @@ export class GeminiLiveClient {
         return;
       }
 
+      const resumptionUpdate: SessionResumptionUpdateMessage | undefined = message.sessionResumptionUpdate;
+      if (resumptionUpdate !== undefined) {
+        const newHandle: string = resumptionUpdate.newHandle ?? resumptionUpdate.token ?? '';
+        if (resumptionUpdate.resumable === true && newHandle.length > 0) {
+          this.sessionHandle = newHandle;
+          Log.info('Gemini session resumption handle updated.');
+        }
+      }
+
+      if (message.goAway !== undefined) {
+        const timeLeft: string = message.goAway.timeLeft ?? '';
+        Log.warn(`Gemini GoAway received. timeLeft=${timeLeft}`);
+        this.reconnectAfterGoAway(timeLeft).catch((error: Error) => {
+          if (!this.intentionalClose) {
+            this.failConnection(`Gemini 会话续接失败：${error.message}`);
+          }
+        });
+        return;
+      }
+
       if (message.setupComplete !== undefined && !this.ready) {
         Log.info('Gemini setupComplete received! Translation is ready.');
         this.ready = true;
+        this.reconnecting = false;
         this.clearConnectTimer();
         this.callbacks?.onStatus('翻译已就绪');
         if (this.readyResolve !== undefined) {
@@ -410,6 +457,51 @@ export class GeminiLiveClient {
     return `${base}${endpoint}?key=${encodeURIComponent(apiKey)}`;
   }
 
+  private async reconnectAfterGoAway(timeLeft: string): Promise<void> {
+    if (this.reconnecting || this.intentionalClose || this.settings === undefined) {
+      return;
+    }
+    this.reconnecting = true;
+    this.ready = false;
+    this.open = false;
+    this.clearConnectTimer();
+    this.callbacks?.onStatus(`Gemini 会话续接中${timeLeft.length > 0 ? `（剩余 ${timeLeft}）` : ''}…`);
+
+    const oldSocket: webSocket.WebSocket | undefined = this.socket;
+    this.socket = undefined;
+    if (oldSocket !== undefined) {
+      try {
+        await oldSocket.close({ code: 1000, reason: 'Reconnect after GoAway' });
+      } catch (error) {
+        Log.warn(`Closing GoAway WebSocket failed: ${JSON.stringify(error)}`);
+      }
+    }
+
+    if (this.intentionalClose || this.settings === undefined) {
+      this.reconnecting = false;
+      return;
+    }
+
+    const url: string = this.buildWebSocketUrl(this.settings.apiBase, this.settings.apiKey);
+    const socket: webSocket.WebSocket = webSocket.createWebSocket();
+    this.socket = socket;
+    this.bindEvents(socket);
+    this.connectTimer = setTimeout(() => {
+      if (this.socket === socket && !this.ready) {
+        this.failConnection('Gemini 会话续接超时');
+      }
+    }, 30000);
+
+    try {
+      Log.info(`Reconnecting Gemini session. resumable=${this.sessionHandle !== undefined}`);
+      await socket.connect(url);
+    } catch (error) {
+      if (this.socket === socket) {
+        this.failConnection(`Gemini 会话续接失败：${JSON.stringify(error)}`);
+      }
+    }
+  }
+
   private maskUrl(url: string): string {
     const keyIdx = url.indexOf('key=');
     if (keyIdx >= 0) {
@@ -422,6 +514,7 @@ export class GeminiLiveClient {
 
   private failConnection(message: string): void {
     Log.error(`failConnection: ${message}`);
+    this.reconnecting = false;
     this.callbacks?.onStatus(message);
     this.rejectReady(message);
     this.notifyDisconnected(message);

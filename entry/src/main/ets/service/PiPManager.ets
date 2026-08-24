@@ -12,6 +12,8 @@ import { Log } from '../util/Logger';
 import { SettingsStore } from './SettingsStore';
 import { SessionListener, SessionState, TranslationSession } from './TranslationSession';
 
+export type PiPActiveChangeListener = (active: boolean) => void;
+
 export class SubtitleData {
   displayOutput: string = '';
   fontSize: number = 18;
@@ -110,6 +112,7 @@ export class PiPManager {
   private nodeController: PiPSubtitleNodeController = new PiPSubtitleNodeController();
   private initialized: boolean = false;
   private active: boolean = false;
+  private activeChangeListeners: PiPActiveChangeListener[] = [];
   private isLiveState: boolean = false;
   private currentSettings: AppSettings = new AppSettings();
 
@@ -122,6 +125,34 @@ export class PiPManager {
 
   getNodeController(): PiPSubtitleNodeController {
     return this.nodeController;
+  }
+
+  isActive(): boolean {
+    return this.active;
+  }
+
+  addActiveChangeListener(listener: PiPActiveChangeListener): void {
+    if (!this.activeChangeListeners.includes(listener)) {
+      this.activeChangeListeners.push(listener);
+    }
+    listener(this.active);
+  }
+
+  removeActiveChangeListener(listener: PiPActiveChangeListener): void {
+    const index: number = this.activeChangeListeners.indexOf(listener);
+    if (index >= 0) {
+      this.activeChangeListeners.splice(index, 1);
+    }
+  }
+
+  private setActive(active: boolean): void {
+    if (this.active === active) {
+      return;
+    }
+    this.active = active;
+    for (let index = 0; index < this.activeChangeListeners.length; index++) {
+      this.activeChangeListeners[index](active);
+    }
   }
 
   isSupported(): boolean {
@@ -165,9 +196,9 @@ export class PiPManager {
       this.pipController.on('stateChange', (state: PiPWindow.PiPState, reason: string) => {
         Log.info(`PiP stateChange: state=${state}, reason=${reason}`);
         if (state === PiPWindow.PiPState.ABOUT_TO_START || state === PiPWindow.PiPState.STARTED) {
-          this.active = true;
+          this.setActive(true);
         } else if (state === PiPWindow.PiPState.ABOUT_TO_STOP || state === PiPWindow.PiPState.STOPPED) {
-          this.active = false;
+          this.setActive(false);
         }
       });
 
@@ -175,6 +206,7 @@ export class PiPManager {
       this.initialized = true;
       Log.info('PiPManager: PiPController created successfully with auto-start enabled');
     } catch (error) {
+      this.setActive(false);
       const err: BusinessError = error as BusinessError;
       Log.error(`PiPManager: failed to create PiPController: ${err.message ?? JSON.stringify(err)}`);
       throw new Error(`初始化画中画悬浮窗失败：${err.message ?? JSON.stringify(err)}`);
@@ -237,9 +269,10 @@ export class PiPManager {
     try {
       Log.info('PiPManager: starting PiP...');
       await this.pipController.startPiP();
-      this.active = true;
+      this.setActive(true);
       Log.info('PiPManager: PiP started successfully');
     } catch (error) {
+      this.setActive(false);
       const err: BusinessError = error as BusinessError;
       Log.error(`PiPManager: startPiP failed: ${err.message ?? JSON.stringify(err)}`);
       throw new Error(`启动画中画悬浮窗失败：${err.message ?? JSON.stringify(err)}`);
@@ -253,7 +286,7 @@ export class PiPManager {
     try {
       Log.info('PiPManager: stopping PiP...');
       await this.pipController.stopPiP();
-      this.active = false;
+      this.setActive(false);
     } catch (error) {
       Log.warn(`PiPManager: stopPiP failed: ${JSON.stringify(error)}`);
     }
