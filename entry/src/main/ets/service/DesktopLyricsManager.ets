@@ -6,16 +6,17 @@ import { SessionListener, SessionState, TranslationSession } from './Translation
 
 export type LyricsActiveChangeListener = (active: boolean) => void;
 
-const MAX_LRC_LINES: number = 300;
-const MAX_LYRIC_LINE_UNITS: number = 16;
-// Shift every LRC timestamp forward so the system playhead (running in real
-// time) always sits inside the PREVIOUS line's span: the window then renders
-// "previous completed line" as current and the "growing line" as next preview.
-const LYRIC_DISPLAY_DELAY_MS: number = 4000;
 const METADATA_PUSH_INTERVAL_MS: number = 800;
 const TRANSCRIPT_FLUSH_DELAY_MS: number = 350;
 const TICK_INTERVAL_MS: number = 1000;
 const PLACEHOLDER_LYRIC: string = '[00:00.00]字幕将实时显示在这里';
+const MAX_LYRIC_LINE_UNITS: number = 16;
+// The window renders "current line" bright and "next line" dim. We want the
+// growing caption in the bright slot, so its fake timestamp sits slightly in
+// the past, while the previous completed line gets a far-future stamp to stay
+// in the dim preview slot.
+const CURRENT_SLOT_BACK_MS: number = 1000;
+const NEXT_SLOT_AHEAD_MS: number = 20000;
 
 function formatLrcTimestamp(elapsedMs: number): string {
   const safeMs: number = Math.max(0, Math.floor(elapsedMs));
@@ -68,14 +69,12 @@ export class DesktopLyricsManager {
   private tickTimer: number = -1;
 
   private virtualStartMs: number = 0;
-  private lrcLines: string[] = [];
-  private consumedTextLength: number = 0;
+  private lastSeenText: string = '';
   private pendingText: string = '';
-  private currentLineText: string = '';
-  private currentLineStartMs: number = 0;
-  private lineSealed: boolean = true;
-  private lastPushElapsedMs: number = -(METADATA_PUSH_INTERVAL_MS + 1);
+  private prevLine: string = '';
+  private growingText: string = '';
   private metadataSeq: number = 0;
+  private lastPushRealMs: number = 0;
   private currentSettings: AppSettings = new AppSettings();
 
   static getInstance(): DesktopLyricsManager {
@@ -179,13 +178,11 @@ export class DesktopLyricsManager {
 
   private resetTimeline(): void {
     this.virtualStartMs = Date.now();
-    this.lrcLines = [];
-    this.consumedTextLength = 0;
+    this.lastSeenText = '';
     this.pendingText = '';
-    this.currentLineText = '';
-    this.currentLineStartMs = 0;
-    this.lineSealed = true;
-    this.lastPushElapsedMs = -(METADATA_PUSH_INTERVAL_MS + 1);
+    this.prevLine = '';
+    this.growingText = '';
+    this.lastPushRealMs = 0;
   }
 
   private async releaseSession(): Promise<void> {
@@ -237,29 +234,69 @@ export class DesktopLyricsManager {
     }
   }
 
+  private computeDelta(text: string): string {
+    if (this.lastSeenText.length === 0) {
+      return text;
+    }
+    if (text.startsWith(this.lastSeenText)) {
+      return text.substring(this.lastSeenText.length);
+    }
+    // TranscriptBuffer trims old content from the front once it crosses its
+    // high watermark, so match by longest suffix/prefix overlap instead of
+    // plain length diffs (a length shrink is NOT a clear event).
+    const maxK: number = Math.min(this.lastSeenText.length, text.length, 400);
+    let best: number = 0;
+    for (let k: number = maxK; k >= 1; k--) {
+      if (this.lastSeenText.endsWith(text.substring(0, k))) {
+        best = k;
+        break;
+      }
+    }
+    if (best === 0 && text.length < this.lastSeenText.length / 2) {
+      // Wholesale replacement (e.g. clearTranscripts followed by new speech).
+      Log.info('DesktopLyric transcript replaced wholesale, resetting timeline');
+      this.resetTimeline();
+      return text;
+    }
+    return text.substring(best);
+  }
+
   private async pushMetadata(force: boolean): Promise<void> {
     const session: avSession.AVSession | undefined = this.session;
     if (!session) {
       return;
     }
-    const elapsed: number = Date.now() - this.virtualStartMs;
-    if (!force && elapsed - this.lastPushElapsedMs < METADATA_PUSH_INTERVAL_MS) {
+    const now: number = Date.now();
+    if (!force && now - this.lastPushRealMs < METADATA_PUSH_INTERVAL_MS) {
       return;
     }
-    this.lastPushElapsedMs = elapsed;
+    this.lastPushRealMs = now;
     // Bump assetId on every push: the system caches lyric content by assetId,
     // so reusing the same id makes it ignore our LRC updates entirely.
     this.metadataSeq += 1;
-    const lrcContent: string = this.lrcLines.length > 0 ? this.lrcLines.join('\n') : PLACEHOLDER_LYRIC;
+
+    const elapsed: number = Math.max(0, now - this.virtualStartMs);
+    let lyric: string = PLACEHOLDER_LYRIC;
+    if (this.growingText.length > 0 || this.prevLine.length > 0) {
+      const currentText: string = this.growingText.length > 0 ? this.growingText : this.prevLine;
+      const lines: string[] = [
+        `${formatLrcTimestamp(Math.max(0, elapsed - CURRENT_SLOT_BACK_MS))}${currentText}`
+      ];
+      if (this.prevLine.length > 0) {
+        lines.push(`${formatLrcTimestamp(elapsed + NEXT_SLOT_AHEAD_MS)}${this.prevLine}`);
+      }
+      lyric = lines.join('\n');
+    }
+
     const metadata: avSession.AVMetadata = {
       assetId: `translation_captions_${this.metadataSeq}`,
       title: '实时翻译字幕',
       artist: 'Gemini Live',
-      lyric: lrcContent
+      lyric: lyric
     };
     try {
       await session.setAVMetadata(metadata);
-      Log.info(`DesktopLyric metadata pushed: seq=${this.metadataSeq}, lines=${this.lrcLines.length}`);
+      Log.info(`DesktopLyric metadata pushed: seq=${this.metadataSeq}, growing=${this.growingText.length}, prev=${this.prevLine.length}`);
     } catch (error) {
       Log.warn(`setAVMetadata failed: ${JSON.stringify(error)}`);
     }
@@ -270,41 +307,26 @@ export class DesktopLyricsManager {
       return;
     }
     const text: string = TranslationSession.getInstance().getOutputTranscript();
-    if (text.length < this.consumedTextLength) {
-      this.resetTimeline();
+    if (text.trim().length === 0) {
+      if (this.lastSeenText.trim().length > 0) {
+        Log.info('DesktopLyric transcript cleared, resetting timeline');
+        this.resetTimeline();
+        this.pushMetadata(true);
+      }
+      return;
     }
-    if (text.length > this.consumedTextLength) {
-      this.pendingText += text.substring(this.consumedTextLength);
-      this.consumedTextLength = text.length;
-    }
-    const chunk: string = normalizeLyricText(this.pendingText);
+    const delta: string = this.computeDelta(text);
+    this.lastSeenText = text;
+    const chunk: string = normalizeLyricText(this.pendingText.length > 0 ? this.pendingText + delta : delta);
+    this.pendingText = '';
     if (chunk.length > 0) {
-      this.pendingText = '';
-      this.appendToLyricLine(chunk);
+      this.growingText = joinLyricText(this.growingText, chunk);
+      if (displayUnits(this.growingText) >= MAX_LYRIC_LINE_UNITS) {
+        this.prevLine = this.growingText;
+        this.growingText = '';
+      }
     }
     this.pushMetadata(force);
-  }
-
-  private appendToLyricLine(chunk: string): void {
-    if (this.lineSealed || this.lrcLines.length === 0) {
-      this.currentLineStartMs = Date.now() - this.virtualStartMs;
-      const stamp: string = formatLrcTimestamp(this.currentLineStartMs + LYRIC_DISPLAY_DELAY_MS);
-      this.currentLineText = chunk;
-      this.lineSealed = false;
-      this.lrcLines.push(`${stamp}${this.currentLineText}`);
-      if (this.lrcLines.length > MAX_LRC_LINES) {
-        this.lrcLines.splice(0, this.lrcLines.length - MAX_LRC_LINES);
-      }
-    } else {
-      this.currentLineText = joinLyricText(this.currentLineText, chunk);
-      const stamp: string = formatLrcTimestamp(this.currentLineStartMs + LYRIC_DISPLAY_DELAY_MS);
-      this.lrcLines[this.lrcLines.length - 1] = `${stamp}${this.currentLineText}`;
-    }
-    if (displayUnits(this.currentLineText) >= MAX_LYRIC_LINE_UNITS) {
-      Log.info(`DesktopLyric line sealed: total=${this.lrcLines.length}, text=${this.currentLineText}`);
-      this.lineSealed = true;
-      this.currentLineText = '';
-    }
   }
 
   private startTicker(): void {
