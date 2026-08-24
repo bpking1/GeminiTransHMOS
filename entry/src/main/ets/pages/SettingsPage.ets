@@ -5,6 +5,7 @@ import {
   LanguageItem,
   languageName
 } from '../model/AppSettings';
+import { DesktopLyricsManager } from '../service/DesktopLyricsManager';
 import { PiPManager } from '../service/PiPManager';
 import { SettingsStore } from '../service/SettingsStore';
 import { Log } from '../util/Logger';
@@ -73,6 +74,7 @@ struct SettingsPage {
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await SettingsStore.save(context, settings);
       PiPManager.getInstance().updateSettings(settings);
+      DesktopLyricsManager.getInstance().updateSettings(settings);
       this.saving = false;
       try {
         this.getUIContext().getRouter().back();

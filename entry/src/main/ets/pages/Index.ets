@@ -1,8 +1,6 @@
 import { common } from '@kit.AbilityKit';
-import { floatView, promptAction } from '@kit.ArkUI';
 import { AppSettings, languageName } from '../model/AppSettings';
-import { CaptionFloatView } from '../service/CaptionFloatView';
-import { PiPManager } from '../service/PiPManager';
+import { DesktopLyricsManager, LyricsActiveChangeListener } from '../service/DesktopLyricsManager';
 import { SettingsStore } from '../service/SettingsStore';
 import { Log } from '../util/Logger';
 import {
@@ -18,6 +16,7 @@ struct Index {
   @State private statusText: string = '准备就绪';
   @State private inputText: string = '';
   @State private outputText: string = '';
+  @State private lyricsActive: boolean = false;
   @State private targetLanguage: string = 'zh';
   @State private audioSource: string = 'system';
   @State private showOriginal: boolean = true;
@@ -30,7 +29,6 @@ struct Index {
   private settings: AppSettings = new AppSettings();
   private readonly pageScroller: Scroller = new Scroller();
   private readonly transcriptScroller: Scroller = new Scroller();
-  private readonly xComponentController: XComponentController = new XComponentController();
   private readonly sessionListener: SessionListener = {
     onState: (state: SessionState, status: string): void => {
       Log.info(`Index onState: state=${state}, status=${status}`);
@@ -41,6 +39,9 @@ struct Index {
       }
     },
     onTranscript: (input: string, output: string): void => {
+      if (this.lyricsActive) {
+        return;
+      }
       this.inputText = input;
       this.outputText = output;
       setTimeout(() => {
@@ -52,22 +53,36 @@ struct Index {
       this.errorText = message;
     }
   };
+  private readonly lyricsActiveChangeListener: LyricsActiveChangeListener = (active: boolean): void => {
+    this.lyricsActive = active;
+    if (active) {
+      this.inputText = '';
+      this.outputText = '';
+      return;
+    }
+    this.inputText = this.session.getInputTranscript();
+    this.outputText = this.session.getOutputTranscript();
+    setTimeout(() => {
+      this.transcriptScroller.scrollEdge(Edge.Bottom);
+    }, 30);
+  };
 
   aboutToAppear(): void {
     this.session.addListener(this.sessionListener);
-    this.initPiP();
+    DesktopLyricsManager.getInstance().addActiveChangeListener(this.lyricsActiveChangeListener);
   }
 
   onPageShow(): void {
     this.session.addListener(this.sessionListener);
+    DesktopLyricsManager.getInstance().addActiveChangeListener(this.lyricsActiveChangeListener);
     this.loadSettings().then(() => {
       this.checkAutoStart();
     });
-    this.initPiP();
   }
 
   aboutToDisappear(): void {
     this.session.removeListener(this.sessionListener);
+    DesktopLyricsManager.getInstance().removeActiveChangeListener(this.lyricsActiveChangeListener);
   }
 
   private async checkAutoStart(): Promise<void> {
@@ -79,16 +94,15 @@ struct Index {
       return;
     }
     this.autoStarted = true;
-    Log.info('Auto-starting translation and PiP on app launch...');
+    Log.info('Auto-starting translation and desktop lyrics on app launch...');
     try {
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await this.session.start(context, this.settings);
-      await this.initPiP();
       setTimeout(async () => {
         try {
-          await PiPManager.getInstance().startPiP();
+          await DesktopLyricsManager.getInstance().start(context);
         } catch (e) {
-          Log.info(`Auto-open PiP info: ${JSON.stringify(e)} (Auto-start on backgrounding is active)`);
+          Log.info(`Auto-open desktop lyrics info: ${JSON.stringify(e)}`);
         }
       }, 400);
     } catch (error) {
@@ -98,12 +112,18 @@ struct Index {
     }
   }
 
-  private async initPiP(): Promise<void> {
+  private async toggleDesktopLyrics(): Promise<void> {
     try {
+      const manager: DesktopLyricsManager = DesktopLyricsManager.getInstance();
+      if (manager.isActive()) {
+        await manager.stop();
+        return;
+      }
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      await PiPManager.getInstance().init(context, this.xComponentController);
-    } catch (e) {
-      Log.warn(`initPiP: ${JSON.stringify(e)}`);
+      await manager.start(context);
+    } catch (error) {
+      const message: string = error instanceof Error ? error.message : JSON.stringify(error);
+      this.errorText = `桌面歌词操作失败：${message}`;
     }
   }
 
@@ -117,7 +137,7 @@ struct Index {
       this.showOriginal = this.settings.showOriginal;
       this.captionFontSize = this.settings.captionFontSize;
       this.settingsLoaded = true;
-      PiPManager.getInstance().updateSettings(this.settings);
+      DesktopLyricsManager.getInstance().updateSettings(this.settings);
       Log.info(`Settings loaded: targetLang=${this.targetLanguage}, source=${this.audioSource}, hasApiKey=${this.settings.apiKey.length > 0}`);
     } catch (error) {
       Log.error(`Failed to load settings: ${JSON.stringify(error)}`);
@@ -191,50 +211,17 @@ struct Index {
       Blank()
 
       Row({ space: 8 }) {
-        Button('FloatView')
-          .height(42)
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#059669')
-          .backgroundColor('#ECFDF5')
-          .borderRadius(14)
-          .padding({ left: 14, right: 14 })
-          .onClick(() => {
-            const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-            const options: promptAction.ActionMenuOptions = {
-              title: '选择 FloatView 闪控窗形态',
-              buttons: [
-                {
-                  text: '大卡片形态 (ROUNDED_RECTANGLE)',
-                  color: '#059669'
-                },
-                {
-                  text: '双行横条形态 (HORIZONTAL_BAR: 1152px 满宽)',
-                  color: '#2563EB'
-                },
-                {
-                  text: '关闭 FloatView',
-                  color: '#E45858'
-                }
-              ]
-            };
-            promptAction.showActionMenu(options).then(async (result: promptAction.ActionMenuSuccessResponse) => {
-              try {
-                if (result.index === 0) {
-                  await CaptionFloatView.getInstance().start(context, floatView.FloatViewTemplateType.ROUNDED_RECTANGLE);
-                } else if (result.index === 1) {
-                  await CaptionFloatView.getInstance().start(context, floatView.FloatViewTemplateType.HORIZONTAL_BAR);
-                } else if (result.index === 2) {
-                  await CaptionFloatView.getInstance().stop();
-                }
-              } catch (err) {
-                const msg: string = err instanceof Error ? err.message : JSON.stringify(err);
-                this.errorText = `FloatView 操作失败：${msg}`;
-              }
-            }).catch((e: Error) => {
-              Log.warn(`ActionMenu dismissed: ${JSON.stringify(e)}`);
-            });
-          })
+      Button(this.lyricsActive ? '关闭桌面歌词' : '桌面歌词')
+        .height(42)
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#059669')
+        .backgroundColor('#ECFDF5')
+        .borderRadius(14)
+        .padding({ left: 14, right: 14 })
+        .onClick(() => {
+          this.toggleDesktopLyrics();
+        })
 
         Button('设置')
           .height(42)
@@ -319,7 +306,7 @@ struct Index {
     }
     this.audioSource = source;
     this.settings.audioSource = source;
-    PiPManager.getInstance().updateSettings(this.settings);
+    DesktopLyricsManager.getInstance().updateSettings(this.settings);
     try {
       const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await SettingsStore.save(context, this.settings);
@@ -355,42 +342,51 @@ struct Index {
       }
       .width('100%')
 
-      Scroll(this.transcriptScroller) {
-        Column() {
-          Text(this.outputText.length > 0 ? this.outputText : '译文会实时显示在这里')
-            .width('100%')
-            .fontSize(this.captionFontSize)
-            .fontWeight(this.outputText.length > 0 ? FontWeight.Bold : FontWeight.Normal)
-            .fontColor(this.outputText.length > 0 ? '#171521' : '#B9B5C2')
-            .lineHeight(this.captionFontSize * 1.45)
-            .copyOption(CopyOptions.LocalDevice)
-            .margin({ top: 12, bottom: this.showOriginal ? 16 : 4 })
-
-          if (this.showOriginal) {
-            Divider()
-              .color('#ECE9F0')
-            Text('原文')
+      if (this.lyricsActive) {
+        Text('字幕正在桌面歌词窗口显示')
+          .width('100%')
+          .height(180)
+          .fontSize(15)
+          .fontColor('#8A8597')
+          .textAlign(TextAlign.Center)
+      } else {
+        Scroll(this.transcriptScroller) {
+          Column() {
+            Text(this.outputText.length > 0 ? this.outputText : '译文会实时显示在这里')
               .width('100%')
-              .fontSize(12)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#8A8597')
-              .margin({ top: 14 })
-            Text(this.inputText.length > 0 ? this.inputText : '等待语音输入…')
-              .width('100%')
-              .fontSize(15)
-              .fontColor(this.inputText.length > 0 ? '#716C7E' : '#BBB7C4')
-              .lineHeight(22)
+              .fontSize(this.captionFontSize)
+              .fontWeight(this.outputText.length > 0 ? FontWeight.Bold : FontWeight.Normal)
+              .fontColor(this.outputText.length > 0 ? '#171521' : '#B9B5C2')
+              .lineHeight(this.captionFontSize * 1.45)
               .copyOption(CopyOptions.LocalDevice)
-              .margin({ top: 6, bottom: 4 })
+              .margin({ top: 12, bottom: this.showOriginal ? 16 : 4 })
+
+            if (this.showOriginal) {
+              Divider()
+                .color('#ECE9F0')
+              Text('原文')
+                .width('100%')
+                .fontSize(12)
+                .fontWeight(FontWeight.Bold)
+                .fontColor('#8A8597')
+                .margin({ top: 14 })
+              Text(this.inputText.length > 0 ? this.inputText : '等待语音输入…')
+                .width('100%')
+                .fontSize(15)
+                .fontColor(this.inputText.length > 0 ? '#716C7E' : '#BBB7C4')
+                .lineHeight(22)
+                .copyOption(CopyOptions.LocalDevice)
+                .margin({ top: 6, bottom: 4 })
+            }
           }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
         }
         .width('100%')
-        .alignItems(HorizontalAlign.Start)
+        .constraintSize({ minHeight: 180, maxHeight: 360 })
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
       }
-      .width('100%')
-      .constraintSize({ minHeight: 180, maxHeight: 360 })
-      .scrollBar(BarState.Auto)
-      .edgeEffect(EdgeEffect.Spring)
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
@@ -514,13 +510,6 @@ struct Index {
       .edgeEffect(EdgeEffect.Spring)
 
       this.BottomControls()
-
-      // Hidden surface for Picture-in-Picture window binding
-      XComponent({ id: 'pip_surface_comp', type: XComponentType.SURFACE, controller: this.xComponentController })
-        .width(1)
-        .height(1)
-        .opacity(0.01)
-        .backgroundColor(Color.Transparent)
     }
     .width('100%')
     .height('100%')

@@ -1,6 +1,7 @@
 import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { DesktopLyricsManager } from '../service/DesktopLyricsManager';
 import { TranslationSession } from '../service/TranslationSession';
 
 const DOMAIN: number = 0x0000;
@@ -25,6 +26,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
+    DesktopLyricsManager.getInstance().stop();
     TranslationSession.getInstance().stop();
   }
 }
