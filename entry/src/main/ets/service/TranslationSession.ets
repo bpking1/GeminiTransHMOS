@@ -1,4 +1,4 @@
-import { abilityAccessCtrl, common, PermissionRequestResult, wantAgent } from '@kit.AbilityKit';
+import { abilityAccessCtrl, common, PermissionRequestResult, wantAgent, WantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { AppSettings } from '../model/AppSettings';
 import { Log } from '../util/Logger';
@@ -487,7 +487,7 @@ export class TranslationSession {
       requestCode: 0,
       wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     };
-    wantAgent.getWantAgent(wantAgentInfo).then((agent: wantAgent.WantAgent): Promise<void> => {
+    wantAgent.getWantAgent(wantAgentInfo).then((agent: WantAgent): Promise<void> => {
       return backgroundTaskManager.startBackgroundRunning(context, mode, agent);
     }).then((): void => {
       Log.info(`Continuous task started (mode=${mode})`);
