@@ -7,6 +7,7 @@ import { SessionListener, SessionState, TranslationSession } from './Translation
 export type LyricsActiveChangeListener = (active: boolean) => void;
 
 const MAX_LRC_LINES: number = 300;
+const MAX_LYRIC_LINE_UNITS: number = 16;
 const METADATA_PUSH_INTERVAL_MS: number = 800;
 const TRANSCRIPT_FLUSH_DELAY_MS: number = 350;
 const TICK_INTERVAL_MS: number = 1000;
@@ -27,6 +28,31 @@ function normalizeLyricText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function displayUnits(text: string): number {
+  let units: number = 0;
+  for (let index = 0; index < text.length; index++) {
+    units += text.charCodeAt(index) > 0xff ? 1 : 0.5;
+  }
+  return units;
+}
+
+function isWordChar(code: number): boolean {
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function joinLyricText(left: string, right: string): string {
+  if (left.length === 0) {
+    return right;
+  }
+  if (right.length === 0) {
+    return left;
+  }
+  if (isWordChar(left.charCodeAt(left.length - 1)) && isWordChar(right.charCodeAt(0))) {
+    return `${left} ${right}`;
+  }
+  return left + right;
+}
+
 export class DesktopLyricsManager {
   private static instance: DesktopLyricsManager | undefined = undefined;
 
@@ -41,6 +67,9 @@ export class DesktopLyricsManager {
   private lrcLines: string[] = [];
   private consumedTextLength: number = 0;
   private pendingText: string = '';
+  private currentLineText: string = '';
+  private currentLineStartMs: number = 0;
+  private lineSealed: boolean = true;
   private lastPushElapsedMs: number = -(METADATA_PUSH_INTERVAL_MS + 1);
   private currentSettings: AppSettings = new AppSettings();
 
@@ -148,6 +177,9 @@ export class DesktopLyricsManager {
     this.lrcLines = [];
     this.consumedTextLength = 0;
     this.pendingText = '';
+    this.currentLineText = '';
+    this.currentLineStartMs = 0;
+    this.lineSealed = true;
     this.lastPushElapsedMs = -(METADATA_PUSH_INTERVAL_MS + 1);
   }
 
@@ -239,14 +271,30 @@ export class DesktopLyricsManager {
     }
     const chunk: string = normalizeLyricText(this.pendingText);
     if (chunk.length > 0) {
-      const elapsed: number = Date.now() - this.virtualStartMs;
-      this.lrcLines.push(`${formatLrcTimestamp(elapsed)}${chunk}`);
+      this.pendingText = '';
+      this.appendToLyricLine(chunk);
+    }
+    this.pushMetadata(force);
+  }
+
+  private appendToLyricLine(chunk: string): void {
+    if (this.lineSealed || this.lrcLines.length === 0) {
+      this.currentLineStartMs = Date.now() - this.virtualStartMs;
+      this.currentLineText = chunk;
+      this.lineSealed = false;
+      this.lrcLines.push(`${formatLrcTimestamp(this.currentLineStartMs)}${this.currentLineText}`);
       if (this.lrcLines.length > MAX_LRC_LINES) {
         this.lrcLines.splice(0, this.lrcLines.length - MAX_LRC_LINES);
       }
-      this.pendingText = '';
+    } else {
+      this.currentLineText = joinLyricText(this.currentLineText, chunk);
+      const stamp: string = formatLrcTimestamp(this.currentLineStartMs);
+      this.lrcLines[this.lrcLines.length - 1] = `${stamp}${this.currentLineText}`;
     }
-    this.pushMetadata(force);
+    if (displayUnits(this.currentLineText) >= MAX_LYRIC_LINE_UNITS) {
+      this.lineSealed = true;
+      this.currentLineText = '';
+    }
   }
 
   private startTicker(): void {
