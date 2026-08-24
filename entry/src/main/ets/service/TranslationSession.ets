@@ -1,4 +1,5 @@
 import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
+import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { AppSettings } from '../model/AppSettings';
 import { Log } from '../util/Logger';
 import {
@@ -224,6 +225,7 @@ export class TranslationSession {
   private cleaningUp: boolean = false;
   private cleanupTask: Promise<void> | undefined = undefined;
   private playbackEnabled: boolean = false;
+  private taskContext: common.UIAbilityContext | undefined = undefined;
   private operationId: number = 0;
   private readonly inputBuffer: TranscriptBuffer = new TranscriptBuffer(800, 400);
   private readonly outputBuffer: TranscriptBuffer = new TranscriptBuffer(1000, 500);
@@ -354,6 +356,7 @@ export class TranslationSession {
       this.state = SessionState.LIVE;
       this.status = settings.audioSource === 'system' ? '正在翻译系统声音' : '正在聆听并翻译';
       this.publishState();
+      this.startBackgroundTask(context);
       Log.info('Translation session is LIVE and active!');
     } catch (error) {
       if (currentOperation !== this.operationId) {
@@ -428,6 +431,7 @@ export class TranslationSession {
     this.running = false;
     this.starting = false;
     try {
+      this.stopBackgroundTask();
       const currentCapture: AudioCaptureSource | undefined = this.capture;
       this.capture = undefined;
       if (currentCapture !== undefined) {
@@ -461,6 +465,36 @@ export class TranslationSession {
       this.setError(reason);
     }).catch((error: Error) => {
       this.setError(`${reason}；清理资源失败：${error.message}`);
+    });
+  }
+
+  private startBackgroundTask(context: common.UIAbilityContext): void {
+    if (this.taskContext !== undefined) {
+      return;
+    }
+    this.taskContext = context;
+    const config: backgroundTaskManager.ContinuousTaskConfig = {
+      taskType: this.playbackEnabled
+        ? backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK
+        : backgroundTaskManager.BackgroundMode.AUDIO_RECORDING
+    };
+    backgroundTaskManager.startContinuousTask(context, config).then((): void => {
+      Log.info(`Continuous task started (mode=${config.taskType})`);
+    }).catch((error: Object): void => {
+      Log.warn(`startContinuousTask failed: ${JSON.stringify(error)}`);
+    });
+  }
+
+  private stopBackgroundTask(): void {
+    const context: common.UIAbilityContext | undefined = this.taskContext;
+    this.taskContext = undefined;
+    if (context === undefined) {
+      return;
+    }
+    backgroundTaskManager.stopContinuousTask(context).then((): void => {
+      Log.info('Continuous task stopped');
+    }).catch((error: Object): void => {
+      Log.warn(`stopContinuousTask failed: ${JSON.stringify(error)}`);
     });
   }
 
