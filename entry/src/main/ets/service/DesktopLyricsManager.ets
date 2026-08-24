@@ -8,7 +8,10 @@ export type LyricsActiveChangeListener = (active: boolean) => void;
 
 const MAX_LRC_LINES: number = 300;
 const MAX_LYRIC_LINE_UNITS: number = 16;
-const PIN_BACK_MS: number = 60;
+// Shift every LRC timestamp forward so the system playhead (running in real
+// time) always sits inside the PREVIOUS line's span: the window then renders
+// "previous completed line" as current and the "growing line" as next preview.
+const LYRIC_DISPLAY_DELAY_MS: number = 4000;
 const METADATA_PUSH_INTERVAL_MS: number = 800;
 const TRANSCRIPT_FLUSH_DELAY_MS: number = 350;
 const TICK_INTERVAL_MS: number = 1000;
@@ -71,7 +74,6 @@ export class DesktopLyricsManager {
   private currentLineText: string = '';
   private currentLineStartMs: number = 0;
   private lineSealed: boolean = true;
-  private lastEntryStartMs: number = -1;
   private lastPushElapsedMs: number = -(METADATA_PUSH_INTERVAL_MS + 1);
   private metadataSeq: number = 0;
   private currentSettings: AppSettings = new AppSettings();
@@ -183,7 +185,6 @@ export class DesktopLyricsManager {
     this.currentLineText = '';
     this.currentLineStartMs = 0;
     this.lineSealed = true;
-    this.lastEntryStartMs = -1;
     this.lastPushElapsedMs = -(METADATA_PUSH_INTERVAL_MS + 1);
   }
 
@@ -212,23 +213,13 @@ export class DesktopLyricsManager {
   }
 
   private buildPlayingState(): avSession.AVPlaybackState {
-    const elapsed: number = Date.now() - this.virtualStartMs;
-    // The system lyric window renders "current line + next line". Pin the
-    // reported position just before the newest entry so the previous line is
-    // treated as current and the growing line is shown as the next preview.
-    let pinMs: number = Math.max(0, elapsed);
-    if (this.lastEntryStartMs >= 0) {
-      pinMs = this.lrcLines.length > 1
-        ? Math.max(0, this.lastEntryStartMs - PIN_BACK_MS)
-        : this.lastEntryStartMs;
-    }
     const position: avSession.PlaybackPosition = {
-      elapsedTime: pinMs,
+      elapsedTime: Math.max(0, Date.now() - this.virtualStartMs),
       updateTime: Date.now()
     };
     const playbackState: avSession.AVPlaybackState = {
       state: avSession.PlaybackState.PLAYBACK_STATE_PLAY,
-      speed: 0,
+      speed: 1,
       position: position
     };
     return playbackState;
@@ -268,6 +259,7 @@ export class DesktopLyricsManager {
     };
     try {
       await session.setAVMetadata(metadata);
+      Log.info(`DesktopLyric metadata pushed: seq=${this.metadataSeq}, lines=${this.lrcLines.length}`);
     } catch (error) {
       Log.warn(`setAVMetadata failed: ${JSON.stringify(error)}`);
     }
@@ -296,19 +288,20 @@ export class DesktopLyricsManager {
   private appendToLyricLine(chunk: string): void {
     if (this.lineSealed || this.lrcLines.length === 0) {
       this.currentLineStartMs = Date.now() - this.virtualStartMs;
-      this.lastEntryStartMs = this.currentLineStartMs;
+      const stamp: string = formatLrcTimestamp(this.currentLineStartMs + LYRIC_DISPLAY_DELAY_MS);
       this.currentLineText = chunk;
       this.lineSealed = false;
-      this.lrcLines.push(`${formatLrcTimestamp(this.currentLineStartMs)}${this.currentLineText}`);
+      this.lrcLines.push(`${stamp}${this.currentLineText}`);
       if (this.lrcLines.length > MAX_LRC_LINES) {
         this.lrcLines.splice(0, this.lrcLines.length - MAX_LRC_LINES);
       }
     } else {
       this.currentLineText = joinLyricText(this.currentLineText, chunk);
-      const stamp: string = formatLrcTimestamp(this.currentLineStartMs);
+      const stamp: string = formatLrcTimestamp(this.currentLineStartMs + LYRIC_DISPLAY_DELAY_MS);
       this.lrcLines[this.lrcLines.length - 1] = `${stamp}${this.currentLineText}`;
     }
     if (displayUnits(this.currentLineText) >= MAX_LYRIC_LINE_UNITS) {
+      Log.info(`DesktopLyric line sealed: total=${this.lrcLines.length}, text=${this.currentLineText}`);
       this.lineSealed = true;
       this.currentLineText = '';
     }
