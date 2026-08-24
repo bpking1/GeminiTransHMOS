@@ -73,6 +73,7 @@ export class DesktopLyricsManager {
   private lineSealed: boolean = true;
   private lastEntryStartMs: number = -1;
   private lastPushElapsedMs: number = -(METADATA_PUSH_INTERVAL_MS + 1);
+  private metadataSeq: number = 0;
   private currentSettings: AppSettings = new AppSettings();
 
   static getInstance(): DesktopLyricsManager {
@@ -255,9 +256,12 @@ export class DesktopLyricsManager {
       return;
     }
     this.lastPushElapsedMs = elapsed;
+    // Bump assetId on every push: the system caches lyric content by assetId,
+    // so reusing the same id makes it ignore our LRC updates entirely.
+    this.metadataSeq += 1;
     const lrcContent: string = this.lrcLines.length > 0 ? this.lrcLines.join('\n') : PLACEHOLDER_LYRIC;
     const metadata: avSession.AVMetadata = {
-      assetId: 'gemini_live_translation_captions',
+      assetId: `translation_captions_${this.metadataSeq}`,
       title: '实时翻译字幕',
       artist: 'Gemini Live',
       lyric: lrcContent
