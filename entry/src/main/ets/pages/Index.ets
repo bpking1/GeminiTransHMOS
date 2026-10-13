@@ -183,6 +183,13 @@ struct Index {
     return '#A4A1B1';
   }
 
+  // Driven by @State so the source buttons re-render when the session starts or
+  // stops; session.isActive() alone is not observed by ArkUI.
+  private canSelectAudioSource(): boolean {
+    return this.settingsLoaded &&
+      (this.sessionState === SessionState.IDLE || this.sessionState === SessionState.ERROR);
+  }
+
   private primaryButtonText(): string {
     if (this.sessionState === SessionState.LIVE) {
       return '停止翻译';
@@ -271,7 +278,7 @@ struct Index {
           .fontColor(this.audioSource === 'mic' ? '#FFFFFF' : '#6F6A7D')
           .backgroundColor(this.audioSource === 'mic' ? '#725FF0' : Color.Transparent)
           .borderRadius(12)
-          .enabled(!this.session.isActive() && this.settingsLoaded)
+          .enabled(this.canSelectAudioSource())
           .onClick(() => {
             this.selectAudioSource('mic');
           })
@@ -282,7 +289,7 @@ struct Index {
           .fontColor(this.audioSource === 'system' ? '#FFFFFF' : '#6F6A7D')
           .backgroundColor(this.audioSource === 'system' ? '#725FF0' : Color.Transparent)
           .borderRadius(12)
-          .enabled(!this.session.isActive() && this.settingsLoaded)
+          .enabled(this.canSelectAudioSource())
           .onClick(() => {
             this.selectAudioSource('system');
           })
@@ -427,7 +434,7 @@ struct Index {
           .padding({ left: 9, right: 9, top: 5, bottom: 5 })
           .backgroundColor('#E4F6EE')
           .borderRadius(10)
-        Text('录音仅在翻译期间开启，应用进入后台会自动停止。')
+        Text('录音仅在翻译期间开启；切到后台后翻译会继续，可随时返回停止。')
           .layoutWeight(1)
           .fontSize(12)
           .fontColor('#706B7D')

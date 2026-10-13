@@ -25,30 +25,35 @@ export type PcmChunkHandler = (chunk: Uint8Array) => void;
 class PcmChunker {
   private readonly chunkSize: number;
   private readonly handler: PcmChunkHandler;
-  private pending: number[] = [];
+  private buffer: Uint8Array;
+  private filled: number = 0;
 
   constructor(chunkSize: number, handler: PcmChunkHandler) {
     this.chunkSize = chunkSize;
     this.handler = handler;
+    this.buffer = new Uint8Array(chunkSize);
   }
 
   append(bytes: Uint8Array): void {
-    for (let index = 0; index < bytes.length; index++) {
-      this.pending.push(bytes[index]);
-    }
-
-    while (this.pending.length >= this.chunkSize) {
-      const chunk: Uint8Array = new Uint8Array(this.chunkSize);
-      for (let index = 0; index < this.chunkSize; index++) {
-        chunk[index] = this.pending[index];
+    let offset: number = 0;
+    while (offset < bytes.length) {
+      const copyLength: number = Math.min(this.chunkSize - this.filled, bytes.length - offset);
+      this.buffer.set(bytes.subarray(offset, offset + copyLength), this.filled);
+      this.filled += copyLength;
+      offset += copyLength;
+      if (this.filled === this.chunkSize) {
+        // Hand the full buffer to the handler and start a fresh one, so the
+        // handler may keep the chunk without it being overwritten.
+        const chunk: Uint8Array = this.buffer;
+        this.buffer = new Uint8Array(this.chunkSize);
+        this.filled = 0;
+        this.handler(chunk);
       }
-      this.pending.splice(0, this.chunkSize);
-      this.handler(chunk);
     }
   }
 
   reset(): void {
-    this.pending = [];
+    this.filled = 0;
   }
 }
 

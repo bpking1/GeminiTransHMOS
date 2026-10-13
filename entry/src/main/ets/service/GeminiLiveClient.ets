@@ -127,6 +127,7 @@ export class GeminiLiveClient {
   private callbacks: GeminiLiveCallbacks | undefined = undefined;
   private settings: AppSettings | undefined = undefined;
   private base64: util.Base64Helper = new util.Base64Helper();
+  private textDecoder: util.TextDecoder = util.TextDecoder.create('utf-8');
   private open: boolean = false;
   private ready: boolean = false;
   private intentionalClose: boolean = false;
@@ -270,14 +271,12 @@ export class GeminiLiveClient {
         rawText = value;
       } else if (value) {
         try {
-          const decoder = util.TextDecoder.create('utf-8');
-          rawText = decoder.decodeToString(new Uint8Array(value as ArrayBuffer));
+          rawText = this.textDecoder.decodeToString(new Uint8Array(value as ArrayBuffer));
         } catch (e) {
           Log.error(`Failed to decode binary message: ${JSON.stringify(e)}`);
           return;
         }
       }
-      Log.info(`WebSocket message received (${rawText.length} chars)`);
       if (rawText.length > 0) {
         this.handleMessage(rawText);
       }
