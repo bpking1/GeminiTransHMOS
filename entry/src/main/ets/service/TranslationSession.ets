@@ -136,75 +136,10 @@ export class TranscriptBuffer {
     return smartConcat(this.committed, this.draft);
   }
 
-  getRecentSubtitle(maxLines: number = 2, maxWeightPerLine: number = 15): string {
-    const d: string = this.draft.trim();
-    const c: string = this.committed.trim();
-    const targetLines: number = Math.max(1, Math.min(5, maxLines));
-
-    const combined: string = smartConcat(c, d);
-    return buildRollingLines(combined, targetLines, maxWeightPerLine);
-  }
-
   clear(): void {
     this.committed = '';
     this.draft = '';
   }
-}
-
-function getCharVisualWeight(c: string): number {
-  if (!c || c.length === 0) {
-    return 0;
-  }
-  const code: number = c.charCodeAt(0);
-  // ASCII / Latin / Numbers / Half-width punctuation
-  if (code <= 0x024F || (code >= 0x2000 && code <= 0x206F)) {
-    return 0.55;
-  }
-  return 1.0;
-}
-
-function buildRollingLines(fullText: string, maxLines: number, maxWeightPerLine: number = 15): string {
-  const clean: string = fullText.replace(/[\r\n]+/g, ' ').trim();
-  if (clean.length === 0) {
-    return '';
-  }
-
-  // Process recent tail of text for instant calculation
-  const maxScanLength: number = Math.round(maxLines * maxWeightPerLine * 4);
-  let scanText: string = clean;
-  if (scanText.length > maxScanLength) {
-    scanText = scanText.substring(scanText.length - maxScanLength).trim();
-  }
-
-  const lines: string[] = [];
-  let currentLine: string = '';
-  let currentWeight: number = 0;
-
-  for (let i = 0; i < scanText.length; i++) {
-    const ch: string = scanText.charAt(i);
-    const w: number = getCharVisualWeight(ch);
-
-    if (currentWeight + w > maxWeightPerLine && currentLine.length > 0) {
-      lines.push(currentLine.trim());
-      currentLine = ch;
-      currentWeight = w;
-    } else {
-      currentLine += ch;
-      currentWeight += w;
-    }
-  }
-
-  if (currentLine.trim().length > 0) {
-    lines.push(currentLine.trim());
-  }
-
-  if (lines.length === 0) {
-    return '';
-  }
-
-  const startIdx: number = Math.max(0, lines.length - maxLines);
-  const visibleLines: string[] = lines.slice(startIdx);
-  return visibleLines.join('\n');
 }
 
 export class TranslationSession {
@@ -275,12 +210,6 @@ export class TranslationSession {
     const index: number = this.listeners.indexOf(listener);
     if (index >= 0) {
       this.listeners.splice(index, 1);
-    }
-  }
-
-  setListener(listener: SessionListener | undefined): void {
-    if (listener) {
-      this.addListener(listener);
     }
   }
 
@@ -404,14 +333,6 @@ export class TranslationSession {
 
   getOutputTranscript(): string {
     return this.outputBuffer.value();
-  }
-
-  getRecentOutputSubtitle(maxLines: number = 2, maxWeightPerLine: number = 15): string {
-    return this.outputBuffer.getRecentSubtitle(maxLines, maxWeightPerLine);
-  }
-
-  getRecentInputSubtitle(maxLines: number = 2, maxWeightPerLine: number = 15): string {
-    return this.inputBuffer.getRecentSubtitle(maxLines, maxWeightPerLine);
   }
 
   isActive(): boolean {

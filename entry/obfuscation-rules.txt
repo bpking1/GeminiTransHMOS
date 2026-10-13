@@ -1,6 +1,2 @@
-# Keep the native module entry points stable.
--keep-property-name
-startPlaybackCapture
-getPlaybackCaptureState
-readPlaybackPcm
-stopPlaybackCapture
+# No custom keep rules: the native capture module was removed, so there are no
+# native entry points left to keep.
